@@ -10,14 +10,18 @@ import pandas as pd
 import numpy as np
 import plotnine as p9
 import scipy
-from lmfit.models import   Model, QuadraticModel, ExponentialModel
+from lmfit.models import   Model, QuadraticModel, ExponentialModel, ConstantModel
 from lmfit import Parameters
 from sklearn.metrics import mean_squared_error
 import importlib
+from plotly.subplots import make_subplots
+import plotly.graph_objects as go
+import traceback
 
 import Ordinary_functions as ordifunc
 import Spike_analysis as sp_an
-
+import Firing_analysis as fir_an
+import matplotlib.pyplot as plt
 
 
 
@@ -241,8 +245,9 @@ def get_sweep_info_parallel(sweep_info_list):
         
         
     if np.abs((Holding_current-SS_current))>=20.:
-        Bridge_Error= estimate_bridge_error(
-            TVC_table, SS_current, stim_start_time, stim_end_time, do_plot=False)
+        # Bridge_Error= estimate_bridge_error(
+        #     TVC_table, SS_current, stim_start_time, stim_end_time, do_plot=False)
+        Bridge_Error = estimate_bridge_error_test(TVC_table, SS_current, stim_start_time, stim_end_time, do_plot=False)
         
     else:
         Bridge_Error=np.nan
@@ -521,7 +526,613 @@ def fit_stimulus_trace(TVC_table_original,stim_start,stim_end,do_plot=False):
         print(my_plot)
     return best_baseline,best_stim_amp,best_stim_start,best_stim_end,NRMSE_double_Heaviside
 
+def estimate_bridge_error_test(original_TVC_table,stim_amplitude,stim_start_time,stim_end_time,do_plot=False):
+    '''
+    A posteriori estimation of bridge error, by estimating 'very fast' membrane voltage transient around stimulus start and end
 
+    Parameters
+    ----------
+    original_TVC_table : pd.DataFrame
+        Contains the Time, voltage, Current and voltage 1st and 2nd derivatives arranged in columns.
+        
+    stim_amplitude : float
+        Value of Stimulus amplitude (between stimulus start and end).
+        
+    stim_start_time : float
+        Stimulus start time.
+        
+    stim_end_time : float
+        Stimulus end time.
+        
+    do_plot : TYPE, optional
+        If True, returns Bridge Error Plots. The default is False.
+
+    Returns
+    -------
+    if do_plot == True: return plots
+    
+    if do_plot == False: return Bridge Error in GOhms
+
+    '''
+    
+    try:
+        TVC_table=original_TVC_table.reset_index(drop=True).copy()
+        start_time_index = np.argmin(abs(np.array(TVC_table['Time_s']) - stim_start_time))
+        
+        stimulus_baseline=np.mean(TVC_table.loc[:(start_time_index-1),'Input_current_pA'])
+        point_table=pd.DataFrame(columns=["Time_s","Membrane_potential_mV","Feature"])
+        Five_kHz_LP_filtered_current_trace = np.array(ordifunc.filter_trace(np.array(TVC_table.loc[:,'Input_current_pA']),
+                                                                            np.array(TVC_table.loc[:,'Time_s']),
+                                                                            filter=5,
+                                                                            filter_order=4,
+                                                                            do_plot=False
+                                                                            ))
+        
+        
+        current_trace_derivative_5kHz = np.array(ordifunc.get_derivative(Five_kHz_LP_filtered_current_trace,
+                                                                          np.array(TVC_table.loc[:,'Time_s'])))
+        
+        current_trace_derivative_5kHz=np.insert(current_trace_derivative_5kHz,0,np.nan)
+        TVC_table.loc[:,"I_dot_five_kHz"] = current_trace_derivative_5kHz
+        
+        
+        Five_kHz_LP_filtered_voltage_trace = np.array(ordifunc.filter_trace(np.array(TVC_table.loc[:,'Membrane_potential_mV']),
+                                                                            np.array(TVC_table.loc[:,'Time_s']),
+                                                                            filter=5,
+                                                                            filter_order=4,
+                                                                            do_plot=False
+                                                                            ))
+        voltage_trace_derivative_5kHz = np.array(ordifunc.get_derivative(Five_kHz_LP_filtered_voltage_trace,
+                                                                          np.array(TVC_table.loc[:,'Time_s'])))
+        voltage_trace_second_derivative_5kHz = np.array(ordifunc.get_derivative(voltage_trace_derivative_5kHz,
+                                                                          np.array(TVC_table.loc[1:,'Time_s'])))
+        
+        voltage_trace_derivative_5kHz=np.insert(voltage_trace_derivative_5kHz,0,np.nan)
+        voltage_trace_second_derivative_5kHz=np.insert(voltage_trace_second_derivative_5kHz,0,np.nan)
+        voltage_trace_second_derivative_5kHz=np.insert(voltage_trace_second_derivative_5kHz,0,np.nan)
+        TVC_table.loc[:,"V_dot_five_kHz"] = voltage_trace_derivative_5kHz
+        TVC_table.loc[:,"V_double_dot_five_kHz"] = voltage_trace_second_derivative_5kHz
+        
+        One_kHz_LP_filtered_voltage_trace = np.array(ordifunc.filter_trace(np.array(TVC_table.loc[:,'Membrane_potential_mV']),
+                                                                            np.array(TVC_table.loc[:,'Time_s']),
+                                                                            filter=1,
+                                                                            filter_order=4,
+                                                                            do_plot=False
+                                                                            ))
+        voltage_trace_derivative_1kHz = np.array(ordifunc.get_derivative(One_kHz_LP_filtered_voltage_trace,
+                                                                          np.array(TVC_table.loc[:,'Time_s'])))
+        voltage_trace_derivative_1kHz=np.insert(voltage_trace_derivative_1kHz,0,np.nan)
+        TVC_table.loc[:,"V_dot_one_kHz"] = voltage_trace_derivative_1kHz
+        
+        
+        
+        # Determine actual stimulus transition time and current step
+        
+        
+        stimulus_end_table = TVC_table.loc[(TVC_table["Time_s"]<=(stim_end_time+.004))&(TVC_table["Time_s"]>=(stim_end_time-.004)),:]
+        stimulus_end_table = stimulus_end_table.reset_index(drop=True)
+        
+        if stim_amplitude <= stimulus_baseline: # negative current_step
+            maximum_current_derivative_index = stimulus_end_table['I_dot_five_kHz'].idxmax()
+            actual_transition_time = stimulus_end_table.loc[maximum_current_derivative_index, 'Time_s']
+        
+        elif stim_amplitude > stimulus_baseline:# Positive current_step
+            minimum_current_derivative_index = stimulus_end_table['I_dot_five_kHz'].idxmin()
+            actual_transition_time = stimulus_end_table.loc[minimum_current_derivative_index, 'Time_s']
+        
+        #Fit a sigmoid to current trace
+        
+        linear_slope, linear_intercept = fir_an.linear_fit(np.array(stimulus_end_table.loc[:,'Time_s']),
+                                                           np.array(stimulus_end_table.loc[:,'Input_current_pA']))
+        
+        init_sigmoid_float = (np.abs(stimulus_baseline-stim_amplitude)/(4*linear_slope))
+        
+        current_trace_table = TVC_table.loc[(TVC_table["Time_s"]<=(stim_end_time+.01))&(TVC_table["Time_s"]>=(stim_end_time-.01)),:]
+        Sigmoid_fit = Model(fir_an.sigmoid_function, prefix = "Sigmoid_")
+        
+        Sigmoid_fit_params  = Sigmoid_fit.make_params()
+        
+        
+        Sigmoid_fit_params.add("Sigmoid_x0",value=stim_end_time)
+        
+        if stim_amplitude <= stimulus_baseline:# negative current_step
+            Sigmoid_fit_params.add("Sigmoid_sigma",value=init_sigmoid_float,min=1e-9)
+        elif stim_amplitude > stimulus_baseline:# Positive current_step
+            Sigmoid_fit_params.add("Sigmoid_sigma",value=init_sigmoid_float,max=-1e-9)
+            
+            
+        
+        scale_fit = ConstantModel(prefix='scale_')
+        scale_fit_pars = scale_fit.make_params()
+        
+        
+        scale_fit_pars['scale_c'].set(value=np.abs(stimulus_baseline-stim_amplitude), min=1e-9)
+        offset_fit = ConstantModel(prefix='offset_')
+        offset_fit_pars = offset_fit.make_params()
+        
+        
+        offset_fit_pars['offset_c'].set(value=stimulus_baseline)
+        
+        Sigmoid_amp_fit = scale_fit*Sigmoid_fit+offset_fit
+        Sigmoid_amp_fit_params = Sigmoid_fit_params+scale_fit_pars+offset_fit_pars
+        
+        Sigmoid_amp_fit_result = Sigmoid_amp_fit.fit(current_trace_table.loc[:,'Input_current_pA'], Sigmoid_amp_fit_params, x=current_trace_table.loc[:,'Time_s'])
+        Sigmoid_amp_scale = Sigmoid_amp_fit_result.best_values["scale_c"]
+        Sigmoid_amp_x0 = Sigmoid_amp_fit_result.best_values["Sigmoid_x0"]
+        Sigmoid_amp_sigma = Sigmoid_amp_fit_result.best_values["Sigmoid_sigma"]
+        Sigmoid_amp_offset = Sigmoid_amp_fit_result.best_values["offset_c"]
+    
+    
+        sigmoid_fit_trace = fir_an.sigmoid_function(current_trace_table.loc[:,'Time_s'],Sigmoid_amp_x0,Sigmoid_amp_sigma)*Sigmoid_amp_scale+Sigmoid_amp_offset
+        sigmoid_fit_trace_table = pd.DataFrame({'Time_s':np.array(current_trace_table.loc[:,'Time_s']),
+                                                "Input_current_pA_Fit" : sigmoid_fit_trace})
+        
+        
+        min_time_fit = np.nanmin(sigmoid_fit_trace_table.loc[:,'Time_s'])
+        max_time_fit = np.nanmax(sigmoid_fit_trace_table.loc[:,'Time_s'])
+        pre_T_current = np.median(np.array(sigmoid_fit_trace_table.loc[(sigmoid_fit_trace_table["Time_s"]<=(min_time_fit+0.005))&(sigmoid_fit_trace_table["Time_s"]>=(min_time_fit)),"Input_current_pA_Fit"]))
+        post_T_current = np.median(np.array(sigmoid_fit_trace_table.loc[(sigmoid_fit_trace_table["Time_s"]<=(max_time_fit))&(sigmoid_fit_trace_table["Time_s"]>=(max_time_fit-0.005)),"Input_current_pA_Fit"]))
+        
+        
+        # pre_T_current = np.median(np.array(stimulus_end_table.loc[(stimulus_end_table["Time_s"]<=(actual_transition_time -.001))&(stimulus_end_table["Time_s"]>=(actual_transition_time-.002)),"Input_current_pA"]))
+        # post_T_current = np.median(stimulus_end_table.loc[(stimulus_end_table["Time_s"]<=(actual_transition_time +.002))&(stimulus_end_table["Time_s"]>=(actual_transition_time+.001)),"Input_current_pA"])
+        delta_I = post_T_current - pre_T_current
+    
+        
+        #Is there fluctuations?
+        std_v_double_dot = np.nanstd(np.array(TVC_table.loc[(TVC_table['Time_s']>=0)&(TVC_table['Time_s']<=0.1),'V_double_dot_five_kHz']))
+        alpha_FT = 6*std_v_double_dot
+        Fast_ringing_table = TVC_table.loc[(TVC_table["Time_s"]<=(actual_transition_time+.005))&(TVC_table["Time_s"]>=actual_transition_time),:]
+        filtered_Fast_ringing_table = Fast_ringing_table[abs(Fast_ringing_table['V_double_dot_five_kHz']) > alpha_FT]
+        if not filtered_Fast_ringing_table.empty:
+            T_FT = np.nanmax(filtered_Fast_ringing_table.loc[:,'Time_s'])
+            T_ref_cell = T_FT
+        else:
+            T_ref_cell = actual_transition_time
+            
+        # get T_Start_fit
+        Post_T_ref_table = TVC_table.loc[TVC_table['Time_s'] >= T_ref_cell,:]
+        Post_T_ref_table = Post_T_ref_table.reset_index(drop=True)
+        
+        
+        if stim_amplitude <= stimulus_baseline: # negative current_step
+            filtered_Post_T_ref_table = Post_T_ref_table.loc[Post_T_ref_table['V_dot_one_kHz'] < 0,:]
+            if not filtered_Post_T_ref_table.empty:
+                first_positive_time = np.nanmin(filtered_Post_T_ref_table.loc[:,'Time_s'])
+                delta_t_ref_first_positive = first_positive_time - T_ref_cell
+            else:
+                delta_t_ref_first_positive = np.nan
+        
+        elif stim_amplitude > stimulus_baseline:# Positive current_step
+            filtered_Post_T_ref_table = Post_T_ref_table.loc[Post_T_ref_table['V_dot_one_kHz'] > 0,:]
+            if not filtered_Post_T_ref_table.empty:
+                
+                first_positive_time = np.nanmin(filtered_Post_T_ref_table.loc[:'Time_s'])
+                delta_t_ref_first_positive = first_positive_time - T_ref_cell
+            else:
+                delta_t_ref_first_positive = np.nan
+                
+        T_start_fit = T_ref_cell + np.nanmax(np.array([2*delta_t_ref_first_positive, 0.0005]))
+        
+        # Fit double exponential
+        
+        Double_Exponential_TVC_table = TVC_table.loc[(TVC_table['Time_s'] >= T_start_fit)&(TVC_table['Time_s'] <= T_start_fit+0.005),:]
+        #return Double_Exponential_TVC_table
+        best_first_A,best_first_tau,best_second_A, best_second_tau, best_C, RMSE_double_expo = fit_double_exponential_BE (Double_Exponential_TVC_table,False)
+        
+        Double_Exponential_TVC_table_extended = TVC_table.loc[(TVC_table['Time_s'] >= actual_transition_time ) & ( TVC_table['Time_s'] <= T_start_fit+0.005 ),:]
+        V_2exp_fit_extended = double_exponential_decay_function(Double_Exponential_TVC_table_extended.loc[:,'Time_s'],
+                                                                           best_first_A,best_first_tau,best_second_A, best_second_tau, best_C)
+        std_V_2exp_fit_extended = np.nanstd(V_2exp_fit_extended)
+        std_V = np.nanstd(Double_Exponential_TVC_table.loc[:,'Membrane_potential_mV'])
+            #Determine which exponential is the fast and which is the slow
+        if best_second_tau>=best_first_tau:
+            fast_tau = best_first_tau
+            fast_A = best_first_A
+            slow_tau = best_second_tau
+            slow_A = best_second_A
+        else:
+            fast_tau = best_second_tau
+            fast_A = best_second_A
+            slow_tau = best_first_tau
+            slow_A = best_first_A
+            
+        if std_V_2exp_fit_extended/std_V < 2. and fast_A/slow_A > 0.1:
+            V_2exp_fit = double_exponential_decay_function(Double_Exponential_TVC_table.loc[:,'Time_s'],
+                                                                               best_first_A,best_first_tau,best_second_A, best_second_tau, best_C)
+            V_fit = V_2exp_fit
+            exponential_fit = 'Double_exponential'
+            shift_transition_time = actual_transition_time-np.nanmin(Double_Exponential_TVC_table.loc[:,'Time_s'])
+            
+            V_fit_at_transition_time = double_exponential_decay_function(shift_transition_time , best_first_A,best_first_tau,best_second_A, best_second_tau, best_C)
+        else:
+    
+            best_single_A,best_single_tau, best_single_C, RMSE_single_expo, V_1exp_fit = fit_single_exponential_BE (Double_Exponential_TVC_table,False)
+            # V_1exp_fit = time_cst_model(Double_Exponential_TVC_table.loc[:,'Time_s'],
+            #                                                                    best_single_A, best_single_tau, best_single_C)
+            V_fit_table = V_1exp_fit
+            exponential_fit = 'Single_exponential'
+            shift_transition_time = actual_transition_time-np.nanmin(Double_Exponential_TVC_table.loc[:,'Time_s'])
+            V_fit_at_transition_time = time_cst_model(shift_transition_time, best_single_A, best_single_tau, best_single_C)
+        
+        #V_fit_table = pd.DataFrame({'Time_s' : Double_Exponential_TVC_table.loc[:,'Time_s'],
+        #                          "Membrane_potential_mV" : V_fit})
+        #Determine V_pre and V_post
+        TVC_table_subset = TVC_table.loc[(TVC_table["Time_s"]>=(actual_transition_time-0.005)) & (TVC_table["Time_s"]<=(actual_transition_time)), :]
+    
+        Zero_5_kHz_LP_filtered_voltage_trace_subset = np.array(ordifunc.filter_trace(np.array(TVC_table_subset.loc[:,'Membrane_potential_mV']),
+                                                                            np.array(TVC_table_subset.loc[:,'Time_s']),
+                                                                            filter=.5,
+                                                                            filter_order=4,
+                                                                            do_plot=False
+                                                                            ))
+        TVC_table_subset.loc[:,"Membrane_potential_0_5_LPF"] = Zero_5_kHz_LP_filtered_voltage_trace_subset
+        TVC_table = pd.merge(TVC_table, TVC_table_subset.loc[:,['Time_s','Membrane_potential_0_5_LPF']], on="Time_s", how='outer')
+        V_pre_transition_time = TVC_table_subset.loc[TVC_table_subset['Time_s']==actual_transition_time, "Membrane_potential_0_5_LPF"].values[0]
+    
+        #return V_fit_table
+        V_post_transition_time = V_fit_at_transition_time
+        
+        delta_V = V_post_transition_time - V_pre_transition_time
+        
+        Bridge_Error = delta_V/delta_I
+    
+        
+        BE_accepted = True
+        obs = '--'
+        # Check if Bridge Error is accepted
+        ## Avoid Delayed Response
+        Filtered_TVC_V_dot_one_kHz =  TVC_table.loc[(TVC_table['Time_s'] >= T_ref_cell) & (TVC_table['Time_s'] <= T_ref_cell+0.005),:]
+        max_abs_V_dot_index = Filtered_TVC_V_dot_one_kHz['V_dot_one_kHz'].abs().idxmax()
+        # Get the corresponding time value
+        time_at_max_abs_value = Filtered_TVC_V_dot_one_kHz.loc[max_abs_V_dot_index, 'Time_s']
+        
+        if time_at_max_abs_value > T_ref_cell+0.002:
+            BE_accepted = False
+            obs = f"Delayed response,time_at_max_abs_value = {time_at_max_abs_value} "
+        
+        ##Avoid long biphasic phase
+        if delta_t_ref_first_positive > 1:
+            BE_accepted = False
+            obs = f"Long Biphasic phase, delta_t_ref_first_positive={delta_t_ref_first_positive}"
+    
+        ## Need reliable estimate of V_pre_transition_time
+        std_V = np.nanstd(TVC_table.loc[(TVC_table['Time_s'] >= T_ref_cell-0.005) & (TVC_table['Time_s'] <= T_ref_cell),"Membrane_potential_mV"])
+        if std_V > 2.:
+            BE_accepted = False
+            obs = f"Unreliable estimated of V_pre_transition_time, std_V = {std_V}"
+            
+        ## Limit error for 2 exponential fit
+        if exponential_fit == 'Double_exponential':
+            if RMSE_double_expo / (best_first_A+best_second_A) > 0.12:
+                BE_accepted = False
+                obs = f"Too large error for 2 exponential fit, RMSE_double_expo / (best_first_A+best_second_A) = {RMSE_double_expo / (best_first_A+best_second_A)}"
+        
+        elif exponential_fit == 'Single_exponential':
+            if RMSE_single_expo / (best_single_A) > 0.12:
+                BE_accepted = False
+                obs = f"Too large error for 1 exponential fit,RMSE_single_expo / (best_single_A)= {RMSE_single_expo / (best_single_A)}"
+        
+        if BE_accepted == False:
+            Bridge_Error = np.nan
+        
+        
+        if do_plot:
+            
+            dict_plot = {'TVC_table':TVC_table,
+                        "Transition_time" : actual_transition_time,
+                        "min_time_fit":min_time_fit,
+                        "max_time_fit":max_time_fit,
+                        "Membrane_potential_mV" : {"V_fit_table" : V_fit_table,
+                                                    "Voltage_Pre_transition" : V_pre_transition_time,
+                                                    "Voltage_Post_transition" :V_post_transition_time},
+                         "Input_current_pA" : {"pre_T_current":pre_T_current,
+                                               "post_T_current" : post_T_current, 
+                                               "Sigmoid_fit" : sigmoid_fit_trace_table}}
+            
+            
+            return dict_plot
+        
+        #print(stimulus_end_table.loc[(TVC_table["Time_s"]<=(actual_transition_time -.001))&(TVC_table["Time_s"]>=(actual_transition_time-.002)),"Input_current_pA"])
+        return Bridge_Error, obs
+    except:
+        error= traceback.format_exc()
+        Bridge_Error = np.nan
+        obs=error
+        
+        return Bridge_Error, obs
+
+def plot_BE(dict_plot):
+    
+    #TVC_table
+    TVC_table = dict_plot['TVC_table']
+    #min_time_fit
+    min_time_fit = dict_plot['min_time_fit']
+    max_time_fit = dict_plot['max_time_fit']
+        # Transition_time
+    actual_transition_time = dict_plot["Transition_time"]
+    
+    # Membrane_potential_mV
+    V_fit_table = dict_plot["Membrane_potential_mV"]["V_fit_table"]
+    V_pre_transition_time = dict_plot["Membrane_potential_mV"]["Voltage_Pre_transition"]
+    V_post_transition_time = dict_plot["Membrane_potential_mV"]["Voltage_Post_transition"]
+    
+    # Input_current_pA
+    pre_T_current = dict_plot["Input_current_pA"]["pre_T_current"]
+    post_T_current = dict_plot["Input_current_pA"]["post_T_current"]
+    sigmoid_fit_trace_table = dict_plot["Input_current_pA"]["Sigmoid_fit"]
+    
+    # Create subplots
+    fig = make_subplots(rows=2, cols=1,  shared_xaxes=True, subplot_titles=("Membrane Potential plot", "Input Current plot"))
+    
+    # Membrane potential plot
+    fig.add_trace(go.Scatter(x=TVC_table['Time_s'], y=TVC_table['Membrane_potential_mV'], mode='lines', name='Cell_trace'), row=1, col=1)
+    fig.add_trace(go.Scatter(x=TVC_table['Time_s'], y=TVC_table['Membrane_potential_0_5_LPF'], mode='lines', name="Membrane_potential_0_5_LPF"), row=1, col=1)
+    fig.add_trace(go.Scatter(x=[actual_transition_time], y=[V_pre_transition_time], mode='markers', name='Voltage_Pre_transition', marker=dict(color='red')), row=1, col=1)
+    fig.add_trace(go.Scatter(x=[actual_transition_time], y=[V_post_transition_time], mode='markers', name='Voltage_Post_transition', marker=dict(color='blue')), row=1, col=1)
+    fig.add_trace(go.Scatter(x=V_fit_table['Time_s'], y=V_fit_table['Membrane_potential_mV'], mode='lines', name='Post_transition_voltage_fit'), row=1, col=1)
+    
+    # Input current plot
+    fig.add_trace(go.Scatter(x=TVC_table['Time_s'], y=TVC_table['Input_current_pA'], mode='lines', name='Input_current_trace'), row=2, col=1)
+    fig.add_trace(go.Scatter(x=sigmoid_fit_trace_table['Time_s'], y=sigmoid_fit_trace_table['Input_current_pA_Fit'], mode='lines', name="Sigmoid Fit To Current Trace"), row=2, col=1)
+    fig.add_trace(go.Scatter(
+        x=np.array(sigmoid_fit_trace_table.loc[(sigmoid_fit_trace_table["Time_s"]<=(min_time_fit+0.005))&(sigmoid_fit_trace_table["Time_s"]>=(min_time_fit)),"Time_s"]), 
+        y=[pre_T_current]*len(np.array(sigmoid_fit_trace_table.loc[(sigmoid_fit_trace_table["Time_s"]<=(min_time_fit+0.005))&(sigmoid_fit_trace_table["Time_s"]>=(min_time_fit)),"Time_s"])), 
+        mode='lines', name="Pre transition fit Median", line=dict(color="red")), row=2, col=1)
+    fig.add_trace(go.Scatter(
+        x=np.array(sigmoid_fit_trace_table.loc[(sigmoid_fit_trace_table["Time_s"]<=(max_time_fit))&(sigmoid_fit_trace_table["Time_s"]>=(max_time_fit-0.005)),"Time_s"]), 
+        y=[post_T_current]*len(np.array(sigmoid_fit_trace_table.loc[(sigmoid_fit_trace_table["Time_s"]<=(max_time_fit))&(sigmoid_fit_trace_table["Time_s"]>=(max_time_fit-0.005)),"Time_s"])), 
+        mode='lines', name="Post transition fit Median", line=dict(color='blue')), row=2, col=1)
+    fig.add_trace(go.Scatter(x=[actual_transition_time], y=[pre_T_current], mode='markers', name='pre_Transition_current', marker=dict(color='red')), row=2, col=1)
+    fig.add_trace(go.Scatter(x=[actual_transition_time], y=[post_T_current], mode='markers', name='post_Transition_current', marker=dict(color='blue')), row=2, col=1)
+    
+    # Update layout
+    fig.update_layout(
+        title_text="Plots",
+        height=800,
+        showlegend=True
+    )
+    
+    # Update x and y axes
+    fig.update_xaxes(title_text="Time_s", row=1, col=1)
+    fig.update_yaxes(title_text="Membrane_potential_mV", row=1, col=1)
+    fig.update_xaxes(title_text="Time_s", row=2, col=1)
+    fig.update_yaxes(title_text="Input_current_pA", row=2, col=1)
+    
+    
+    fig.show()
+
+    
+
+def fit_single_exponential_BE(original_fit_table, do_plot=False):
+    '''
+    Fit an exponential curve to to membrane trace at either the stimulus start or the stimulus end, during the estimation of the Bridge Error
+
+    Parameters
+    ----------
+    original_fit_table : pd.DataFrame
+        Contains the Time, voltage, Current traces arranged in columns.
+        
+    stim_start : Boolean, optional
+        Wether to fit at the stimulus start or end time. The default is True.
+        
+    do_plot : Boolean, optional
+        Do plot. The default is False.
+
+    Returns
+    -------
+    best_A, best_tau : Float
+        Fit result.
+    RMSE_expo : Float
+        Godness of fit.
+
+    '''
+    
+    try:
+        fit_table=original_fit_table.copy()
+        fit_table=fit_table.reset_index(drop=True)
+        #Shift time_value so that it starts at 0, easier to fit
+        Time_shift = np.nanmin(fit_table.loc[:,'Time_s'])
+        fit_table.loc[:,'Time_s']-=Time_shift
+        
+        x_data=np.array(fit_table.loc[:,'Time_s'])
+        y_data=np.array(fit_table.loc[:,"Membrane_potential_mV"])
+        
+        membrane_start_voltage = y_data[0]
+        membrane_end_voltage = y_data[-1]
+        
+        membrane_delta=membrane_end_voltage - membrane_start_voltage
+
+        
+        membrane_voltage_2_3 = membrane_start_voltage + membrane_delta*2/3
+        fit_table['abs_diff'] = abs(fit_table['Membrane_potential_mV'] - membrane_voltage_2_3)
+        min_diff_index = fit_table['abs_diff'].idxmin()
+        x_2_3 = fit_table.loc[min_diff_index, 'Time_s']
+        
+       
+        init_A = (y_data[0]-y_data[-1])/(np.exp(0/(x_2_3-x_data[0])))
+        
+        exp_offset = y_data[-1]
+        initial_voltage_time_cst=membrane_end_voltage+(1-(1/np.exp(1)))*membrane_delta
+        initial_voltage_time_cst_idx=np.argmin(abs(y_data - initial_voltage_time_cst))
+        initial_time_cst=x_data[initial_voltage_time_cst_idx]-x_data[0]
+        
+        
+
+        single_exponential_model = Model(time_cst_model)
+        
+        single_exponential_parameters=Parameters()
+      
+        single_exponential_parameters.add("A",init_A)
+        single_exponential_parameters.add('tau',min=0.0005, value = initial_time_cst)
+        
+        single_exponential_parameters.add("C", membrane_end_voltage)
+
+        result = single_exponential_model.fit(y_data, single_exponential_parameters, x=x_data)
+
+        best_first_A=result.best_values['A']
+        best_first_tau=result.best_values['tau']
+        
+        best_C = result.best_values['C']
+        
+        
+        
+        pred = time_cst_model(x_data, best_first_A, best_first_tau, best_C)
+        squared_error = np.square((y_data - pred))
+        sum_squared_error = np.sum(squared_error)
+        RMSE_double_expo = np.sqrt(sum_squared_error / y_data.size)
+        fit_table['Data']='Original_Data'
+        simulation_table=pd.DataFrame(np.column_stack((x_data,pred)),columns=["Time_s","Membrane_potential_mV"])
+        simulation_table['Data']='Fit_Single_Expo_Data'
+        fit_table.loc[:,'Time_s']+=Time_shift
+        simulation_table.loc[:,'Time_s']+=Time_shift
+        
+        fit_table=pd.concat([fit_table, simulation_table], axis=0)
+        if do_plot:
+            
+            my_plot=p9.ggplot(fit_table,p9.aes(x="Time_s",y="Membrane_potential_mV",color='Data'))+p9.geom_line()
+            print(my_plot)
+        
+        return best_first_A,best_first_tau, best_C, RMSE_double_expo, fit_table
+    
+    except (ValueError):
+        best_first_A=np.nan
+        best_first_tau=np.nan
+        
+        best_C = np.nan
+        RMSE_double_expo=np.nan
+        fit_table = pd.DataFrame(columns=['Time_s', 'Membrane_potential_mV'])
+        return best_first_A,best_first_tau, best_C, RMSE_double_expo
+    
+
+def double_exponential_decay_function(x, first_A, first_tau, second_A, second_tau, C):
+    '''
+    Parameters
+    ----------
+    x : Array
+        interspike interval index array.
+    A: flt
+        initial instantanous frequency .
+    B : flt
+        Adaptation index constant.
+    C : flt
+        intantaneous frequency limit.
+
+    Returns
+    -------
+    y : array
+        Modelled instantanous frequency.
+
+    '''
+
+    
+    return  first_A*np.exp(-(x)/first_tau) + second_A*np.exp(-(x)/second_tau) + C
+
+def fit_double_exponential_BE(original_fit_table, do_plot=False):
+    '''
+    Fit an exponential curve to to membrane trace at either the stimulus start or the stimulus end, during the estimation of the Bridge Error
+
+    Parameters
+    ----------
+    original_fit_table : pd.DataFrame
+        Contains the Time, voltage, Current traces arranged in columns.
+        
+    stim_start : Boolean, optional
+        Wether to fit at the stimulus start or end time. The default is True.
+        
+    do_plot : Boolean, optional
+        Do plot. The default is False.
+
+    Returns
+    -------
+    best_A, best_tau : Float
+        Fit result.
+    RMSE_expo : Float
+        Godness of fit.
+
+    '''
+    
+    try:
+        fit_table=original_fit_table.copy()
+        #Shift time_value so that it starts at 0, easier to fit
+        Time_shift = np.nanmin(fit_table.loc[:,'Time_s'])
+        fit_table.loc[:,'Time_s']-=Time_shift
+        
+        x_data=np.array(fit_table.loc[:,'Time_s'])
+        y_data=np.array(fit_table.loc[:,"Membrane_potential_mV"])
+        
+        
+        
+        membrane_start_voltage = y_data[0]
+        membrane_end_voltage = y_data[-1]
+        
+        membrane_delta=membrane_end_voltage - membrane_start_voltage
+
+        
+        membrane_voltage_2_3 = membrane_start_voltage + membrane_delta*2/3
+        fit_table['abs_diff'] = abs(fit_table['Membrane_potential_mV'] - membrane_voltage_2_3)
+        min_diff_index = fit_table['abs_diff'].idxmin()
+        x_2_3 = fit_table.loc[min_diff_index, 'Time_s']
+        
+       
+        init_A = (y_data[0]-y_data[-1])/(np.exp(0/(x_2_3-x_data[0])))
+        
+        exp_offset = y_data[-1]
+        initial_voltage_time_cst=membrane_end_voltage+(1-(1/np.exp(1)))*membrane_delta
+        initial_voltage_time_cst_idx=np.argmin(abs(y_data - initial_voltage_time_cst))
+        initial_time_cst=x_data[initial_voltage_time_cst_idx]-x_data[0]
+        
+        
+        first_expo_model=ExponentialModel(prefix= 'first_')
+        second_expo_model = ExponentialModel(prefix = 'second_')
+        pars = first_expo_model.make_params()
+        
+        double_exponential_model = Model(double_exponential_decay_function)
+        
+        double_exponential_parameters=Parameters()
+
+    
+        double_exponential_parameters.add("first_A", value= init_A)
+        double_exponential_parameters.add('first_tau',min=0.0005, value = initial_time_cst)
+        double_exponential_parameters.add("second_A", value= init_A)
+        double_exponential_parameters.add('second_tau',min=0.0005, value = initial_time_cst)
+        double_exponential_parameters.add("C", value = y_data[-1])
+        result = double_exponential_model.fit(y_data, double_exponential_parameters, x=x_data)
+    
+        best_first_A=result.best_values['first_A']
+        best_first_tau=result.best_values['first_tau']
+        best_second_A=result.best_values['second_A']
+        best_second_tau=result.best_values['second_tau']
+        best_C = result.best_values['C']
+        
+        
+        
+        pred = double_exponential_decay_function(x_data,best_first_A,best_first_tau,best_second_A, best_second_tau, best_C)
+        squared_error = np.square((y_data - pred))
+        sum_squared_error = np.sum(squared_error)
+        RMSE_double_expo = np.sqrt(sum_squared_error / y_data.size)
+        fit_table['Data']='Original_Data'
+        simulation_table=pd.DataFrame(np.column_stack((x_data,pred)),columns=["Time_s","Membrane_potential_mV"])
+        simulation_table['Data']='Fit_Double_Expo_Data'
+        fit_table.loc[:,'Time_s']+=Time_shift
+        simulation_table.loc[:,'Time_s']+=Time_shift
+        fit_table=pd.concat([fit_table, simulation_table], axis=0)
+        if do_plot:
+            
+            my_plot=p9.ggplot(fit_table,p9.aes(x="Time_s",y="Membrane_potential_mV",color='Data'))+p9.geom_line()
+            print(my_plot)
+        
+        return best_first_A,best_first_tau,best_second_A, best_second_tau, best_C, RMSE_double_expo
+    
+    except (ValueError):
+        best_first_A=np.nan
+        best_first_tau=np.nan
+        best_second_A=np.nan
+        best_second_tau=np.nan
+        best_C = np.nan
+        RMSE_double_expo=np.nan
+        return best_first_A,best_first_tau,best_second_A, best_second_tau, best_C, RMSE_double_expo
+    
 def estimate_bridge_error(original_TVC_table,stim_amplitude,stim_start_time,stim_end_time,do_plot=False):
     '''
     A posteriori estimation of bridge error, by estimating 'very fast' membrane voltage transient around stimulus start and end
@@ -694,12 +1305,13 @@ def estimate_bridge_error(original_TVC_table,stim_amplitude,stim_start_time,stim
     #                                np.array(test_spike_table.Input_current_pA),
     #                                np.array(test_spike_table.Time_s)[0],
     #                                np.array(test_spike_table.Time_s)[-1],do_plot=False)
-    
+    #return(test_spike_table)
     voltage_spike_table = sp_an.identify_spike(np.array(test_spike_table.Membrane_potential_mV),
                                    np.array(test_spike_table.Time_s),
                                    np.array(test_spike_table.Input_current_pA),
                                    np.array(test_spike_table.Time_s)[0],
                                    np.array(test_spike_table.Time_s)[-1],do_plot=False)
+    #return(test_spike_table)
     if len(voltage_spike_table['Peak']) != 0:
         is_spike = True
     else:
@@ -945,10 +1557,11 @@ def estimate_bridge_error(original_TVC_table,stim_amplitude,stim_start_time,stim
         is_spike = True
     else:
         is_spike = False
-        
+
     if is_spike == True:
     #if np.nanmax(fit_table_end['Potential_first_time_derivative_mV/s']) >20. or np.nanmax(fit_table_end['Potential_first_time_derivative_mV/s']) <-20.:
         Bridge_Error_stim_end=np.nan
+
 
 
     else:
@@ -963,7 +1576,7 @@ def estimate_bridge_error(original_TVC_table,stim_amplitude,stim_start_time,stim
         # Get a table between [T_trans_end and T_trans_end+T_seg_duration_end ] to estimate backward to T_trans_end from the fit
         Pre_trans_Init_Value_table_end=stimulus_end_table[stimulus_end_table["Time_s"]>=(T_seg_start_end-T_seg_duration_end)]
         Pre_trans_Init_Value_table_end=Pre_trans_Init_Value_table_end[Pre_trans_Init_Value_table_end['Time_s']<=T_trans_end]
-        
+
         if np.isnan(RMSE_poly) and np.isnan(RMSE_expo):
             Bridge_Error_stim_end = np.nan
            
@@ -992,6 +1605,7 @@ def estimate_bridge_error(original_TVC_table,stim_amplitude,stim_start_time,stim
         
            
             pre_trans_init_value_line=pd.DataFrame([T_trans_end,Pre_trans_init_value_end,'Pre_trans_init_value']).T
+
             pre_trans_init_value_line.columns=["Time_s","Membrane_potential_mV","Feature"]
             point_table_end=pd.concat([point_table_end,pre_trans_init_value_line],ignore_index=True)
            
@@ -1018,7 +1632,7 @@ def estimate_bridge_error(original_TVC_table,stim_amplitude,stim_start_time,stim
             Post_trans_final_value_line=pd.DataFrame([T_trans_end,Post_Trans_Final,'PostTrans_Est']).T
             Post_trans_final_value_line.columns=["Time_s","Membrane_potential_mV","Feature"]
             point_table_end=pd.concat([point_table_end,Post_trans_final_value_line],ignore_index=True)
-            
+            Search_BE_end = True
             
             #fit_table_end=pd.concat([backward_table, PreTrans_Est_table], axis=0)
             
@@ -1047,41 +1661,42 @@ def estimate_bridge_error(original_TVC_table,stim_amplitude,stim_start_time,stim
     
     
     if do_plot:
-        TVC_table=TVC_table.astype({"Time_s":"float",
-                                    'Membrane_potential_mV':"float",
-                                    "Input_current_pA":"float"})
-        
-        fit_table=fit_table.astype({"Time_s":"float",
-                                    'Membrane_potential_mV':"float",
-                                    "Input_current_pA":"float"})
-
-        backward_table=backward_table.astype({"Time_s":"float",
-                                    'Membrane_potential_mV':"float"})
-        
-        PreTrans_Est_table_to_fit=PreTrans_Est_table_to_fit.astype({"Time_s":"float",
-                                    'Membrane_potential_mV':"float"})
-        
-        PreTrans_Est_table=PreTrans_Est_table.astype({"Time_s":"float",
-                                    'Membrane_potential_mV':"float"})
-        
-        point_table=point_table.astype({"Time_s":"float",
-                                    'Membrane_potential_mV':"float"})
-        
-        backward_table_end=backward_table_end.astype({"Time_s":"float",
-                                    'Membrane_potential_mV':"float"})
-        
-        PostTrans_Est_table_to_fit=PostTrans_Est_table_to_fit.astype({"Time_s":"float",
-                                    'Membrane_potential_mV':"float"})
-        
-        PostTrans_Est_table=PostTrans_Est_table.astype({"Time_s":"float",
-                                    'Membrane_potential_mV':"float"})
-        
-        point_table_end=point_table_end.astype({"Time_s":"float",
-                                    'Membrane_potential_mV':"float"})
-        
-        fit_table_end=fit_table_end.astype({"Time_s":"float",
-                                    'Membrane_potential_mV':"float"})
-        
+        if np.isnan(Bridge_Error_stim_start) == False:
+            TVC_table=TVC_table.astype({"Time_s":"float",
+                                        'Membrane_potential_mV':"float",
+                                        "Input_current_pA":"float"})
+            
+            fit_table=fit_table.astype({"Time_s":"float",
+                                        'Membrane_potential_mV':"float",
+                                        "Input_current_pA":"float"})
+    
+            backward_table=backward_table.astype({"Time_s":"float",
+                                        'Membrane_potential_mV':"float"})
+            
+            PreTrans_Est_table_to_fit=PreTrans_Est_table_to_fit.astype({"Time_s":"float",
+                                        'Membrane_potential_mV':"float"})
+            
+            PreTrans_Est_table=PreTrans_Est_table.astype({"Time_s":"float",
+                                        'Membrane_potential_mV':"float"})
+            
+            point_table=point_table.astype({"Time_s":"float",
+                                        'Membrane_potential_mV':"float"})
+        if np.isnan(Bridge_Error_stim_end) == False:
+            backward_table_end=backward_table_end.astype({"Time_s":"float",
+                                        'Membrane_potential_mV':"float"})
+            
+            PostTrans_Est_table_to_fit=PostTrans_Est_table_to_fit.astype({"Time_s":"float",
+                                        'Membrane_potential_mV':"float"})
+            
+            PostTrans_Est_table=PostTrans_Est_table.astype({"Time_s":"float",
+                                        'Membrane_potential_mV':"float"})
+            
+            point_table_end=point_table_end.astype({"Time_s":"float",
+                                        'Membrane_potential_mV':"float"})
+            
+            fit_table_end=fit_table_end.astype({"Time_s":"float",
+                                        'Membrane_potential_mV':"float"})
+            
         my_plot=p9.ggplot(TVC_table,p9.aes(x='Time_s',y='Membrane_potential_mV'))+p9.geom_line(color='black')
         my_plot+= p9.geom_line(fit_table,p9.aes(x='Time_s',y='Membrane_potential_mV'),color='red',size=.7)
         my_plot_end=p9.ggplot(TVC_table,p9.aes(x='Time_s',y='Membrane_potential_mV'))+p9.geom_line(color='black')
@@ -1108,7 +1723,7 @@ def estimate_bridge_error(original_TVC_table,stim_amplitude,stim_start_time,stim
             
         else: 
             my_plot_end+= p9.geom_line(test_spike_table_end,p9.aes(x='Time_s',y='Membrane_potential_mV'),color='red',linetype='dashed',size=.9)
-            #my_plot+=p9.xlim(stim_start_time-.03,stim_start_time+.03)
+            my_plot+=p9.xlim(stim_start_time-.03,stim_start_time+.03)
         my_plot+=p9.geom_vline(xintercept=T_trans,color='purple')
         #my_plot+=p9.ylim(-75,-40)
         my_plot_end+=p9.geom_vline(xintercept=T_trans_end,color='purple')

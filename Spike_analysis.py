@@ -11,7 +11,7 @@ import plotnine as p9
 import logging
 import Ordinary_functions as ordifunc
 
-def create_cell_Full_SF_dict_table(original_Full_TVC_table, original_cell_sweep_info_table):
+def create_cell_Full_SF_dict_table(original_Full_TVC_table, original_cell_sweep_info_table,do_filter=True,BE_correct =True):
     '''
     Identify for all TVC table contained in a Full_TVC_table, all spike related_features
 
@@ -42,12 +42,14 @@ def create_cell_Full_SF_dict_table(original_Full_TVC_table, original_cell_sweep_
     Full_SF_dict_table=pd.DataFrame(columns=['Sweep',"SF_dict"])
     for current_sweep in sweep_list:
         
-        current_TVC=ordifunc.get_filtered_TVC_table(Full_TVC_table,current_sweep,do_filter=True,filter=5.,do_plot=False)
+        current_TVC=ordifunc.get_filtered_TVC_table(Full_TVC_table,current_sweep,do_filter=do_filter,filter=5.,do_plot=False)
         current_TVC_copy = current_TVC.copy()
-        BE=original_cell_sweep_info_table.loc[current_sweep,'Bridge_Error_GOhms']
-        if not np.isnan(BE):
-            current_TVC_copy.loc[:,'Membrane_potential_mV'] = current_TVC_copy.loc[:,'Membrane_potential_mV']-BE*current_TVC_copy.loc[:,'Input_current_pA']
-        
+        if BE_correct ==True:
+            BE=original_cell_sweep_info_table.loc[current_sweep,'Bridge_Error_GOhms']
+            
+            if not np.isnan(BE):
+                current_TVC_copy.loc[:,'Membrane_potential_mV'] = current_TVC_copy.loc[:,'Membrane_potential_mV']-BE*current_TVC_copy.loc[:,'Input_current_pA']
+            
         
         membrane_trace = np.array(current_TVC_copy['Membrane_potential_mV'])
         time_trace = np.array(current_TVC_copy['Time_s'])
@@ -68,7 +70,7 @@ def create_cell_Full_SF_dict_table(original_Full_TVC_table, original_cell_sweep_
     
     return Full_SF_dict_table
 
-def create_Full_SF_table(original_Full_TVC_table, original_Full_SF_dict, cell_sweep_info_table):
+def create_Full_SF_table(original_Full_TVC_table, original_Full_SF_dict, cell_sweep_info_table,do_filter=True,BE_correct =True):
     '''
     Create for each Dict contained in original_Full_SF_dict a DataFrame containing the time, voltage and current values of the spike related features (if any, otherwise, empty dataframe)
 
@@ -102,12 +104,12 @@ def create_Full_SF_table(original_Full_TVC_table, original_Full_SF_dict, cell_sw
 
         current_sweep = str(current_sweep)
 
-        current_TVC=ordifunc.get_filtered_TVC_table(Full_TVC_table,current_sweep,do_filter=True,filter=5.,do_plot=False)
+        current_TVC=ordifunc.get_filtered_TVC_table(Full_TVC_table,current_sweep,do_filter=do_filter,filter=5.,do_plot=False)
         
-        
-        BE = cell_sweep_info_table.loc[cell_sweep_info_table['Sweep'] == current_sweep,'Bridge_Error_GOhms'].values[0]
-        current_TVC.loc[:,'Membrane_potential_mV'] -= BE*current_TVC.loc[:,'Input_current_pA']
-            
+        if BE_correct == True:
+            BE = cell_sweep_info_table.loc[cell_sweep_info_table['Sweep'] == current_sweep,'Bridge_Error_GOhms'].values[0]
+            current_TVC.loc[:,'Membrane_potential_mV'] -= BE*current_TVC.loc[:,'Input_current_pA']
+                
             
         
         current_SF_table = create_SF_table(current_TVC, Full_SF_dict.loc[current_sweep, 'SF_dict'].copy())
@@ -150,10 +152,102 @@ def create_SF_table(original_TVC_table, SF_dict):
         current_feature_table = TVC_table.loc[SF_dict[feature], :].copy()
         current_feature_table['Feature'] = feature
         SF_table = pd.concat([SF_table, current_feature_table])
+        
+    SF_table = SF_table.sort_values(by=['Time_s'])
+    
+    
+    if SF_table.shape[0]!=0:
+        spike_index=0
+        SF_table.loc[:,"Spike_index"] = 0
+        had_threshold = False
+        for elt in range(SF_table.shape[0]):
 
+            if SF_table.iloc[elt,5]=="Threshold" and had_threshold==False:
+                had_threshold = True
+                SF_table.iloc[elt,6] = spike_index
+                
+            elif SF_table.iloc[elt,5]!="Threshold":
+                SF_table.iloc[elt,6] = spike_index
+                
+            elif SF_table.iloc[elt,5]=="Threshold" and had_threshold==True:
+                spike_index+=1
+                SF_table.iloc[elt,6] = spike_index
+        
+        SF_table = get_spike_half_width(TVC_table, SF_table)
+        
+    else:
+        SF_table = pd.DataFrame(columns=['Time_s', 'Membrane_potential_mV', 'Input_current_pA',
+                                     'Potential_first_time_derivative_mV/s', 'Potential_second_time_derivative_mV/s/s', 'Feature','Spike_index'])
     return SF_table
 
-def identify_spike(membrane_trace_array,time_array, current_trace, stim_start_time, stim_end_time, do_plot=False):
+   
+def get_spike_half_width(TVC_table_original, SF_table_original):
+    TVC_table = TVC_table_original.copy()
+    stim_amp_pA = np.nanmean(SF_table_original.loc[:,'Input_current_pA'])
+    threshold_table = SF_table_original.loc[SF_table_original['Feature'] == 'Threshold',:]
+    threshold_table = threshold_table.sort_values(by=['Time_s'])
+    threshold_time = list(threshold_table.loc[:,'Time_s'])
+    
+    trough_table = SF_table_original.loc[SF_table_original['Feature'] == 'Trough',:]
+    trough_table = trough_table.sort_values(by=['Time_s'])
+    trough_time = list(trough_table.loc[:,'Time_s'])
+    
+    peak_table = SF_table_original.loc[SF_table_original['Feature'] == 'Peak',:]
+    peak_table = peak_table.sort_values(by=['Time_s'])
+    peak_time = list(peak_table.loc[:,'Time_s'])
+    
+    upstroke_table = SF_table_original.loc[SF_table_original['Feature'] == 'Upstroke',:]
+    upstroke_table = upstroke_table.sort_values(by=['Time_s'])
+    spike_time_list = list(upstroke_table.loc[:,'Time_s'])
+    
+    if len(threshold_time) != len(trough_time):
+        if len(threshold_time)> len(trough_time):
+            while len(threshold_time)> len(trough_time):
+                threshold_time=threshold_time[:-1]
+                
+        elif len(threshold_time) < len(trough_time):
+            while len(threshold_time) < len(trough_time):
+                trough_time=trough_time[:-1]
+                
+    spike_index = 0
+    for threshold, trough, peak, spike_time in zip(threshold_time, trough_time, peak_time, spike_time_list):
+        
+        threshold_to_peak_table = TVC_table.loc[(TVC_table['Time_s']>=threshold)&(TVC_table['Time_s']<=peak), :]
+        membrane_voltage_array = np.array(threshold_to_peak_table.loc[:,'Membrane_potential_mV'])
+        time_array = np.array(threshold_to_peak_table.loc[:,'Time_s'])
+        
+        spike_heigth = threshold_to_peak_table.loc[threshold_to_peak_table['Time_s'] == peak,'Membrane_potential_mV'].values[0] - threshold_to_peak_table.loc[threshold_to_peak_table['Time_s'] == threshold,'Membrane_potential_mV'].values[0]
+        spike_height_line = pd.DataFrame([spike_time, spike_heigth, stim_amp_pA, np.nan, np.nan, "Spike_heigth", spike_index ]).T
+        spike_height_line.columns = SF_table_original.columns
+        SF_table_original = pd.concat([SF_table_original,spike_height_line ],ignore_index=True)
+        
+        half_spike_heigth = (threshold_to_peak_table.loc[threshold_to_peak_table['Time_s'] == peak,'Membrane_potential_mV'].values[0]+threshold_to_peak_table.loc[threshold_to_peak_table['Time_s'] == threshold,'Membrane_potential_mV'].values[0])/2
+        
+        
+        half_width_start_index = ordifunc.find_time_index(membrane_voltage_array, half_spike_heigth)
+        half_width_start = time_array[half_width_start_index]
+        
+        peak_to_trough_table = TVC_table.loc[(TVC_table['Time_s']>=peak)&(TVC_table['Time_s']<=trough), :]
+        membrane_voltage_array = np.array(peak_to_trough_table.loc[:,'Membrane_potential_mV'])
+        time_array = np.array(peak_to_trough_table.loc[:,'Time_s'])
+        
+        assert membrane_voltage_array[0] >= half_spike_heigth >= membrane_voltage_array[-1], "Given potential ({:f}) is outside of potential range ({:f}, {:f})".format(half_spike_heigth, membrane_voltage_array[0], membrane_voltage_array[-1])
+
+        half_width_end_index = np.argmin(abs(membrane_voltage_array - half_spike_heigth))
+        #half_width_end_index = ordifunc.find_time_index(membrane_voltage_array, half_spike_heigth)
+        half_width_end = time_array[half_width_end_index]
+        
+        half_height_width = half_width_end - half_width_start
+        
+        half_width_line = pd.DataFrame([half_height_width, np.nan, stim_amp_pA, np.nan, np.nan, "Spike_width_at_half_heigth",spike_index ]).T
+        half_width_line.columns = SF_table_original.columns
+        SF_table_original = pd.concat([SF_table_original,half_width_line ],ignore_index=True)
+        
+        spike_index+=1
+        
+    return SF_table_original
+
+def identify_spike(membrane_trace_array,time_array, current_trace, stim_start_time, stim_end_time,  do_plot=False):
     '''
     Based on AllenSDK.EPHYS_EPHYS_FEATURES module
     Identify spike and their related features based on membrane voltage trace and time traces
@@ -192,8 +286,10 @@ def identify_spike(membrane_trace_array,time_array, current_trace, stim_start_ti
     first_derivative=np.insert(first_derivative,0,np.nan)
 
     second_derivative=ordifunc.get_derivative(first_derivative,time_array)
-    second_derivative=np.insert(second_derivative,0,[np.nan,np.nan])
     
+    filtered_second_derivative = ordifunc.filter_trace(second_derivative,time_array[2:],filter=1.,do_plot=False)
+    second_derivative=np.insert(second_derivative,0,[np.nan,np.nan])
+    filtered_second_derivative = np.insert(filtered_second_derivative,0,[np.nan,np.nan])
     TVC_table=pd.DataFrame({'Time_s':time_array,
                                'Membrane_potential_mV':membrane_trace_array,
                                'Input_current_pA':current_trace,
@@ -211,7 +307,7 @@ def identify_spike(membrane_trace_array,time_array, current_trace, stim_start_ti
                                                          start=stim_start_time,
                                                          end=stim_end_time,
                                                          filter=5.,
-                                                         dv_cutoff=20.,
+                                                         dv_cutoff=18.,
                                                          dvdt=time_derivative)
 
 
@@ -276,10 +372,12 @@ def identify_spike(membrane_trace_array,time_array, current_trace, stim_start_ti
                                                    t=time_array,
                                                    peak_indexes=peak_index_array,
                                                    upstroke_indexes=upstroke_index,
+                                                   method = 'Mean_upstroke_fraction',
                                                    thresh_frac=0.05,
                                                    filter=5.,
                                                    dvdt=time_derivative,
-                                                   dv2dt2=second_time_derivative)
+                                                   dv2dt2=filtered_second_derivative)
+    
 
     if do_plot:
         refined_threshold_table=TVC_table.iloc[spike_threshold_index[~np.isnan(spike_threshold_index)],:]; refined_threshold_table['Feature']='D-Refined_spike_threshold'
@@ -643,7 +741,7 @@ def find_upstroke_indexes(v, t, spike_indexes, peak_indexes, filter=5., dvdt=Non
     return upstroke_indexes
 
 
-def refine_threshold_indexes(v, t, peak_indexes,upstroke_indexes, thresh_frac=0.05, filter=5., dvdt=None,dv2dt2=None):
+def refine_threshold_indexes(v, t, peak_indexes,upstroke_indexes,method="Mean_upstroke_fraction",  thresh_frac=0.05, filter=5., dvdt=None,dv2dt2=None):
     """
     From AllenSDK.EPHYS.EPHYS_FEATURES Module
     Refine threshold detection of previously-found spikes.
@@ -670,36 +768,38 @@ def refine_threshold_indexes(v, t, peak_indexes,upstroke_indexes, thresh_frac=0.
         
         dvdt = ordifunc.get_derivative(v, t)
     
+    if method == "Second_Derivative":
     ##########
-    ## Here the threshold is defined as the local maximum of the second voltage derivative
-    # opening_window=np.append(np.array([0]), peak_indexes[:-1])
-    # closing_window=peak_indexes
-    
-    # threshold_indexes = [np.argmax(dv2dt2[prev_peak:nex_peak])+prev_peak for prev_peak, nex_peak in
-    #                     zip(opening_window, closing_window)]
-    # return np.array(threshold_indexes)
+    # Here the threshold is defined as the local maximum of the second voltage derivative
+        opening_window=np.append(np.array([0]), peak_indexes[:-1])
+        closing_window=peak_indexes
+        
+        
+        threshold_indexes = [np.argmax(dv2dt2[prev_peak:nex_peak])+prev_peak for prev_peak, nex_peak in
+                            zip(opening_window, closing_window)]
+        return np.array(threshold_indexes)
     ##########
+    elif method == "Mean_upstroke_fraction":
+        ## Here the threshold is defined as the last index where dvdt= avg_upstroke * thresh_frac
+        avg_upstroke = dvdt[upstroke_indexes].mean()
+        target = avg_upstroke * thresh_frac
     
-    ## Here the threshold is defined as the last index where dvdt= avg_upstroke * thresh_frac
-    avg_upstroke = dvdt[upstroke_indexes].mean()
-    target = avg_upstroke * thresh_frac
-
-    upstrokes_and_start = np.append(np.array([0]), upstroke_indexes)
-    threshold_indexes = []
-    for upstk, upstk_prev in zip(upstrokes_and_start[1:], upstrokes_and_start[:-1]):
-
-        voltage_indexes = np.flatnonzero(dvdt[upstk:upstk_prev:-1] <= target)
-
-        if not voltage_indexes.size:
-            # couldn't find a matching value for threshold,
-            # so just going to the start of the search interval
-            threshold_indexes.append(upstk_prev)
-        else:
-            threshold_indexes.append(upstk - voltage_indexes[0])
-
-    threshold_indexes = np.array(threshold_indexes)
-    #threshold_indexes = threshold_indexes.astype(int)
-    return threshold_indexes
+        upstrokes_and_start = np.append(np.array([0]), upstroke_indexes)
+        threshold_indexes = []
+        for upstk, upstk_prev in zip(upstrokes_and_start[1:], upstrokes_and_start[:-1]):
+    
+            voltage_indexes = np.flatnonzero(dvdt[upstk:upstk_prev:-1] <= target)
+    
+            if not voltage_indexes.size:
+                # couldn't find a matching value for threshold,
+                # so just going to the start of the search interval
+                threshold_indexes.append(upstk_prev)
+            else:
+                threshold_indexes.append(upstk - voltage_indexes[0])
+    
+        threshold_indexes = np.array(threshold_indexes)
+        #threshold_indexes = threshold_indexes.astype(int)
+        return threshold_indexes
 
 def check_thresholds_and_peaks(v, t, spike_indexes, peak_indexes, upstroke_indexes, start=None, end=None,
                                max_interval=0.01, thresh_frac=0.05, filter=5., dvdt=None,
@@ -1252,5 +1352,110 @@ def find_fast_trough_adp_slow_trough(v, t, spike_indexes, peak_indexes, downstro
 
     # clipped[~clipped] = update_clipped
     # return output, clipped
+
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
+
+def plot_trace_with_spike_features(Full_TVC_table, Full_SF_table,sweep_info_table, sweep, BE_corrected,  superimpose_BE):
+    TVC = Full_TVC_table.loc[sweep, 'TVC'].copy()
+    SF_table = Full_SF_table.loc[sweep,'SF'].copy()
+    BE = sweep_info_table.loc[sweep, "Bridge_Error_GOhms"]
+        
+        
+    
+    color_dict = {'Input_current_pA': 'black',
+                  'Membrane potential': 'black',
+                  'Membrane potential BE Corrected': "black",
+                  "Membrane potential original" : "red",
+                  'Threshold': "#a2c5fc",
+                  "Upstroke": "#0562f5",
+                  "Peak": "#2f0387",
+                  "Downstroke": "#9f02e8",
+                  "Fast_Trough": "#c248fa",
+                  "fAHP": "#d991fa",
+                  "Trough": '#fc3873',
+                  "Slow_Trough": "#96022e"
+                  }
+    
+    
+   
+    fig = make_subplots(rows=2, cols=1, shared_xaxes=True, subplot_titles=("Membrane Potential plot", "Input Current plot"))
+    
+    if BE_corrected == True:
+        if not np.isnan(BE):
+            TVC.loc[:,'Membrane_potential_mV'] = TVC.loc[:,'Membrane_potential_mV']-BE*TVC.loc[:,'Input_current_pA']
+        fig.add_trace(go.Scatter(x=TVC['Time_s'], y=TVC['Membrane_potential_mV'], mode='lines', name='Membrane potential BE Corrected', line=dict(color=color_dict['Membrane potential'])), row=1, col=1)
+        if superimpose_BE == True:
+            TVC_second = Full_TVC_table.loc[sweep, 'TVC'].copy()
+            fig.add_trace(go.Scatter(x=TVC_second['Time_s'], y=TVC_second['Membrane_potential_mV'], mode='lines', name='Membrane potential original', line=dict(color=color_dict['Membrane potential original'])), row=1, col=1)
+    
+    
+    else: 
+        fig.add_trace(go.Scatter(x=TVC['Time_s'], y=TVC['Membrane_potential_mV'], mode='lines', name='Membrane potential ', line=dict(color=color_dict['Membrane potential'])), row=1, col=1)
+    # Plot for Membrane_potential_mV vs Time_s from SF_table if not empty
+    if not SF_table.empty:
+        for feature in SF_table['Feature'].unique():
+            if feature in ["Spike_heigth", "Spike_width_at_half_heigth"]:
+                continue
+            subset = SF_table[SF_table['Feature'] == feature]
+            
+            fig.add_trace(go.Scatter(x=subset['Time_s'], y=subset['Membrane_potential_mV'], mode='markers', name=feature, marker=dict(color=color_dict[feature])), row=1, col=1)
+    
+    # Plot for Input_current_pA vs Time_s from TVC
+    fig.add_trace(go.Scatter(x=TVC['Time_s'], y=TVC['Input_current_pA'], mode='lines', name='Input current', line=dict(color=color_dict['Input_current_pA'])), row=2, col=1)
+    
+    # Update layout
+    
+    
+    # fig.update_layout(height=800, showlegend=True, title_text="TVC and SF Plots", )
+    
+    fig.update_layout(
+    height=800,
+    showlegend=True,
+    title_text="TVC and SF Plots",
+    hovermode='x unified',  # Use 'x unified' to create a unified hover mode
+    )
+    fig.update_xaxes(title_text="Time_s", row=2, col=1)
+    fig.update_yaxes(title_text="Membrane_potential_mV", row=1, col=1)
+    fig.update_yaxes(title_text="Input_current_pA", row=2, col=1)
+    
+     
+    # Show plot
+    fig.show()
+    
+
+###Functions used for clustering
+def get_cell_spikes_traces(Full_TVC_table, Full_SF_table):
+    
+    sweep_list = Full_TVC_table.loc[:,'Sweep']
+    spike_trace_table = pd.DataFrame(columns=["Membrane_potential_mV",'Potential_first_time_derivative_mV/s',"Time_s","Sweep", 'Spike_index'])
+    i=0
+    for current_sweep in sweep_list:
+        current_SF_table = Full_SF_table.loc[current_sweep,"SF"]
+        
+        if current_SF_table.shape[0]==0:
+            continue
+        
+        current_TVC_table = ordifunc.get_filtered_TVC_table(Full_TVC_table, current_sweep)
+        peak_table = current_SF_table.loc[current_SF_table['Feature']=='Peak', :]
+        peak_table = peak_table.sort_values(by=['Time_s'])
+        peak_table = peak_table.reset_index()
+        
+        for line in range(peak_table.shape[0]):
+            peak_time = peak_table.loc[line,'Time_s']
+            window_st = peak_time - .001
+            window_end = peak_time + .002
+            
+            current_spike_window = current_TVC_table.loc[(current_TVC_table['Time_s'] >= window_st) & (current_TVC_table['Time_s'] <= window_end ), ['Membrane_potential_mV','Potential_first_time_derivative_mV/s', 'Time_s']]
+            current_spike_window.loc[:,'Time_s'] -= peak_time # center on peak time
+            current_spike_window['Sweep'] = str(current_sweep)
+            current_spike_window['Spike_index'] = str(i+1)
+            i+=1
+            spike_trace_table = pd.concat([spike_trace_table, current_spike_window],axis=0, ignore_index=True)
+            
+    return spike_trace_table
+
+
+
 
 

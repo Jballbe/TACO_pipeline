@@ -12,9 +12,72 @@ import plotnine as p9
 import scipy
 import h5py
 import importlib
-
+import re
+import tqdm
 import Sweep_analysis as sw_an
 import Spike_analysis as sp_an
+import Firing_analysis as fir_an
+import traceback
+
+def get_upstroke_dowstroke_and_intervals(args_list):
+    cell_id,config_line = args_list
+    try:
+        #Full_TVC_table, Full_SF_dict_table, Full_SF_table, Metadata_table, sweep_info_table, Sweep_QC_table, cell_fit_table, cell_feature_table,Processing_df = read_cell_file_h5(str(cell_id),config_line,["All"])
+        cell_dict = read_cell_file_h5(str(cell_id),config_line,["All"])
+        Full_SF_table = cell_dict['Full_SF_table']
+        sweep_info_table = cell_dict['Sweep_info_table']
+        
+        
+        sweep_info_table = sweep_info_table.sort_values(by=['Stim_amp_pA'])
+        sweep_list = np.array(sweep_info_table.loc[:,'Sweep'])
+        first_upstroke_deriv, first_downstroke_deriv, first_interval, tenth_interval, first_sweep_with_five, first_sweep_with_ten = [np.nan]*6
+        Obs='--'
+        for current_sweep in sweep_list:
+            SF_table = Full_SF_table.loc[current_sweep, "SF"]
+            
+            peak_table = SF_table.loc[SF_table['Feature']=='Peak',:]
+            if peak_table.shape[0] ==0:
+                continue
+            elif peak_table.shape[0] >=5 :
+                SF_table = SF_table.sort_values(by=['Time_s'])
+                upstroke_table = SF_table.loc[SF_table['Feature']=="Upstroke",:]
+                upstroke_table=upstroke_table.reset_index(drop=True)
+                first_upstroke_deriv = upstroke_table.loc[0,"Potential_first_time_derivative_mV/s"]
+                
+                downstroke_table = SF_table.loc[SF_table['Feature']=="Downstroke",:]
+                downstroke_table=downstroke_table.reset_index(drop=True)
+                first_downstroke_deriv = downstroke_table.loc[0,"Potential_first_time_derivative_mV/s"]
+                
+                first_sweep_with_five = current_sweep
+                break
+                
+        for current_sweep in sweep_list:
+            SF_table = Full_SF_table.loc[current_sweep, "SF"]
+            
+            peak_table = SF_table.loc[SF_table['Feature']=='Peak',:]
+            
+            if peak_table.shape[0] ==0:
+                continue
+            
+            elif peak_table.shape[0] >=10 :
+                SF_table = SF_table.sort_values(by=['Time_s'])
+                peak_table = peak_table.reset_index(drop=True)
+                first_interval = peak_table.loc[1,'Time_s'] - peak_table.loc[0,'Time_s']
+                
+                tenth_interval = peak_table.loc[9,'Time_s'] - peak_table.loc[8,'Time_s']
+                
+                first_sweep_with_ten = current_sweep
+                break
+    except:
+        error= traceback.format_exc()
+        first_upstroke_deriv, first_downstroke_deriv, first_interval, tenth_interval, first_sweep_with_five, first_sweep_with_ten = [np.nan]*6
+        Obs = error
+    new_line = pd.DataFrame([str(cell_id), Obs, first_sweep_with_five, first_upstroke_deriv, first_downstroke_deriv, first_sweep_with_ten,first_interval, tenth_interval]).T
+    new_line.columns = ['Cell_id','Obs','First_sweep_with_five_spikes', 'First_upstroke_Potential_derivative','First_downstroke_Potential_derivative', 'First_sweep_with_ten_spikes',"First_spike_interval", "Tenth_spike_interval"]
+    
+   
+    
+    return new_line
 
 def get_filtered_TVC_table(original_cell_full_TVC_table,sweep,do_filter=True,filter=5.,do_plot=False):
     '''
@@ -41,7 +104,7 @@ def get_filtered_TVC_table(original_cell_full_TVC_table,sweep,do_filter=True,fil
     
     cell_full_TVC_table = original_cell_full_TVC_table.copy()
     TVC_table=cell_full_TVC_table.loc[str(sweep),'TVC'].copy()
-    
+
     if do_filter:
         
         TVC_table['Membrane_potential_mV']=np.array(filter_trace(TVC_table['Membrane_potential_mV'],
@@ -82,7 +145,28 @@ def get_filtered_TVC_table(original_cell_full_TVC_table,sweep,do_filter=True,fil
 
     return TVC_table
 
-def filter_trace(value_trace, time_trace, filter=5., filter_order = 2, do_plot=False): 
+def subsample_TVC_table(original_TVC_table, subsampling_freq):
+    subsampled_TVC_table = original_TVC_table.copy()
+    time_trace = subsampled_TVC_table.loc[:,'Time_s']
+    delta_t = time_trace[1] - time_trace[0]
+    sample_freq = round(1. / delta_t)
+    
+    if sample_freq <= subsampling_freq:
+        print (f'Original sampling frequency ( {sample_freq}Hz) lower or equal to subsampling frequency ({subsampling_freq}Hz). No subsampling performed')
+        return original_TVC_table
+    else:
+        subsample_factor = sample_freq // subsampling_freq
+        
+        if sample_freq % subsampling_freq !=0:
+            resulting_freq = sample_freq//subsample_factor
+            not_integer_subsample_factor = sample_freq / subsampling_freq
+            print(f'Subsampling process not exact. sample_freq / subsampling_freq not integer ({not_integer_subsample_factor}). The actual resulting frequency will be {resulting_freq}Hz. ')
+
+        subsampled_TVC_table = subsampled_TVC_table.iloc[::subsample_factor,:]
+        subsampled_TVC_table = subsampled_TVC_table.reset_index(drop=True)
+        return subsampled_TVC_table
+    
+def filter_trace(value_trace, time_trace, filter=5., filter_order = 2, zero_phase = False,do_plot=False): 
     '''
     Apply a Butterworth Low-pass filters time-varying signal.
 
@@ -99,6 +183,9 @@ def filter_trace(value_trace, time_trace, filter=5., filter_order = 2, do_plot=F
         
     filter_order : int, optional
         Order of the filter to apply. The default is 2.
+        
+    zero_phase : bool, optional
+        Shoudl the fileter be a zero_phase filter. The default is False
         
     do_plot : Boolean, optional
         Do Plot. The default is False.
@@ -123,13 +210,16 @@ def filter_trace(value_trace, time_trace, filter=5., filter_order = 2, do_plot=F
 
     if filt_coeff < 0 or filt_coeff >= 1:
         raise ValueError("Butterworth coeff ({:f}) is outside of valid range [0,1]; cannot filter sampling frequency {:.1f} kHz with cutoff frequency {:.1f} kHz.".format(filt_coeff, sample_freq / 1e3, filter))
-    b, a = scipy.signal.butter(filter_order, filt_coeff, "low")
-
-    zi = scipy.signal.lfilter_zi(b, a)
+    # Design a 4th order low-pass Butterworth filter
+    b, a = scipy.signal.butter(filter_order, filt_coeff, btype='low')
     
-    filtered_signal =  scipy.signal.lfilter(b, a, value_trace,zi=zi*value_trace[0], axis=0)[0]
+    if zero_phase == True:
+        # Apply the filter to the signal using filtfilt for zero-phase filtering
+        filtered_signal = scipy.signal.filtfilt(b, a, value_trace)
+    else:
+        zi = scipy.signal.lfilter_zi(b, a)
     
-    
+        filtered_signal =  scipy.signal.lfilter(b, a, value_trace,zi=zi*value_trace[0], axis=0)[0]
    
     
     if do_plot:
@@ -141,9 +231,9 @@ def filter_trace(value_trace, time_trace, filter=5., filter_order = 2, do_plot=F
         signal_df ['Trace']='Original_Trace'
         filtered_df ['Trace']='Filtered_Trace'
         
-        signal_df=signal_df.append(filtered_df,ignore_index=True)
-        
-        filter_plot = p9.ggplot(signal_df, p9.aes(x='Time_s',y='Values',color='Trace',group='Trace'))+p9.geom_line()
+        #signal_df=signal_df.append(filtered_df,ignore_index=True)
+        signal_df = pd.concat([signal_df, filtered_df], ignore_index = True)
+        filter_plot = p9.ggplot(signal_df, p9.aes(x='Time_s',y='Values',color='Trace',group='Trace'))+p9.geom_line()+p9.xlim(2.1,2.4)
         print(filter_plot)
         
     return filtered_signal
@@ -221,7 +311,7 @@ def write_cell_file_h5(cell_file_path,
     '''
 
 
-    f = h5py.File(cell_file_path, "a")
+    file = h5py.File(cell_file_path, "a")
     
     if "All" in selection:
         selection = ["Metadata","Sweep analysis", "Spike analysis", "Firing analysis"]
@@ -229,17 +319,17 @@ def write_cell_file_h5(cell_file_path,
     if "Metadata" in saving_dict.keys():
         original_Metadata_table = saving_dict["Metadata"]
         
-        if 'Metadata' in f.keys() and overwrite == True:
-            del f["Metadata"]
+        if 'Metadata' in file.keys() and overwrite == True:
+            del file["Metadata"]
             if isinstance(original_Metadata_table,dict) == True:
-                Metadata_group = f.create_group('Metadata')
+                Metadata_group = file.create_group('Metadata')
                 for elt in original_Metadata_table.keys():
         
                     Metadata_group.create_dataset(
                         str(elt), data=original_Metadata_table[elt])
-        elif 'Metadata' not in f.keys():
+        elif 'Metadata' not in file.keys():
             if isinstance(original_Metadata_table,dict) == True:
-                Metadata_group = f.create_group('Metadata')
+                Metadata_group = file.create_group('Metadata')
                 for elt in original_Metadata_table.keys():
         
                     Metadata_group.create_dataset(
@@ -249,10 +339,10 @@ def write_cell_file_h5(cell_file_path,
     if "Spike analysis" in saving_dict.keys():
         original_Full_SF_dict = saving_dict["Spike analysis"]
         
-        if 'Spike analysis' in f.keys() and overwrite == True:
-            del f["Spike analysis"]
+        if 'Spike analysis' in file.keys() and overwrite == True:
+            del file["Spike analysis"]
             if isinstance(original_Full_SF_dict,pd.DataFrame) == True:
-                SF_group = f.create_group("Spike analysis")
+                SF_group = file.create_group("Spike analysis")
                 
                 sweep_list = np.array(original_Full_SF_dict['Sweep'])
                 for current_sweep in sweep_list:
@@ -265,10 +355,10 @@ def write_cell_file_h5(cell_file_path,
                             current_SF_group.create_dataset(
                                 str(elt), data=current_SF_dict[elt])
     
-        elif 'Spike analysis' not in f.keys():
+        elif 'Spike analysis' not in file.keys():
             if isinstance(original_Full_SF_dict,pd.DataFrame) == True:
                 sweep_list = np.array(original_Full_SF_dict['Sweep'])
-                SF_group = f.create_group("Spike analysis")
+                SF_group = file.create_group("Spike analysis")
                 
                 for current_sweep in sweep_list:
         
@@ -285,11 +375,11 @@ def write_cell_file_h5(cell_file_path,
         original_cell_sweep_info_table = sweep_analysis_dict['Sweep info']
         original_cell_sweep_QC = sweep_analysis_dict['Sweep QC']
         
-        if 'Sweep analysis' in f.keys() and overwrite == True:
+        if 'Sweep analysis' in file.keys() and overwrite == True:
             
-            del f["Sweep analysis"]
+            del file["Sweep analysis"]
             if isinstance(original_cell_sweep_info_table,pd.DataFrame) == True:
-                cell_sweep_info_table_group = f.create_group('Sweep analysis')
+                cell_sweep_info_table_group = file.create_group('Sweep analysis')
                 sweep_list=np.array(original_cell_sweep_info_table['Sweep'])
         
                 for elt in np.array(original_cell_sweep_info_table.columns):
@@ -297,9 +387,9 @@ def write_cell_file_h5(cell_file_path,
                         elt, data=np.array(original_cell_sweep_info_table[elt]))
                    
     
-        elif 'Sweep analysis' not in f.keys():
+        elif 'Sweep analysis' not in file.keys():
             if isinstance(original_cell_sweep_info_table,pd.DataFrame) == True:
-                cell_sweep_info_table_group = f.create_group('Sweep analysis')
+                cell_sweep_info_table_group = file.create_group('Sweep analysis')
                 for elt in np.array(original_cell_sweep_info_table.columns):
                     cell_sweep_info_table_group.create_dataset(
                         elt, data=np.array(original_cell_sweep_info_table[elt]))
@@ -307,23 +397,27 @@ def write_cell_file_h5(cell_file_path,
             
         
         if isinstance(original_cell_sweep_QC,pd.DataFrame) == True:
-            convert_dict = {'Sweep': str,
-                            'Passed_QC' : bool
-                            }
+            convert_dict = {}
+            for col in original_cell_sweep_QC.columns:
+                if col == "Sweep":
+                    convert_dict[col]=str
+                else:
+                    convert_dict[col]=bool
+          
         
             original_cell_sweep_QC = original_cell_sweep_QC.astype(convert_dict)
     
-        if 'Sweep_QC' in f.keys() and overwrite == True:
-            del f['Sweep_QC']
+        if 'Sweep_QC' in file.keys() and overwrite == True:
+            del file['Sweep_QC']
             if isinstance(original_cell_sweep_QC,pd.DataFrame) == True:
-                cell_sweep_QC_group = f.create_group("Sweep_QC")
+                cell_sweep_QC_group = file.create_group("Sweep_QC")
                 for elt in np.array(original_cell_sweep_QC.columns):
                     
                     cell_sweep_QC_group.create_dataset(
                         elt, data=np.array(original_cell_sweep_QC[elt]))
-        elif 'Sweep_QC' not in f.keys():
+        elif 'Sweep_QC' not in file.keys():
             if isinstance(original_cell_sweep_QC,pd.DataFrame) == True:
-                cell_sweep_QC_group = f.create_group("Sweep_QC")
+                cell_sweep_QC_group = file.create_group("Sweep_QC")
                 for elt in np.array(original_cell_sweep_QC.columns):
                     
                     cell_sweep_QC_group.create_dataset(
@@ -334,26 +428,39 @@ def write_cell_file_h5(cell_file_path,
         Firing_analysis_dict = saving_dict["Firing analysis"]
         original_cell_feature_table = Firing_analysis_dict['Cell_feature']
         original_cell_fit_table = Firing_analysis_dict['Cell_fit']
-        if 'Cell_Feature' in f.keys() and overwrite == True:
-            del f["Cell_Feature"]
+        original_cell_adaptation_table = Firing_analysis_dict['Cell_Adaptation']
+        if 'Cell_Feature' in file.keys() and overwrite == True:
+            del file["Cell_Feature"]
             if isinstance(original_cell_feature_table,pd.DataFrame) == True:
-                cell_feature_group = f.create_group('Cell_Feature')
+                cell_feature_group = file.create_group('Cell_Feature')
                 for elt in np.array(original_cell_feature_table.columns):
                     cell_feature_group.create_dataset(
                         elt, data=np.array(original_cell_feature_table[elt]))
             
-            del f['Cell_Fit']
+            del file['Cell_Fit']
             if isinstance(original_cell_fit_table,pd.DataFrame) == True:
-                cell_fit_group = f.create_group('Cell_Fit')
+                cell_fit_group = file.create_group('Cell_Fit')
                 for elt in np.array(original_cell_fit_table.columns):
                     cell_fit_group.create_dataset(
                         elt, data=np.array(original_cell_fit_table[elt]))
+                    
+            del file['Cell_Adaptation']
+            if isinstance(original_cell_adaptation_table,pd.DataFrame) == True:
+                cell_adaptation_group = file.create_group('Cell_Adaptation')
+                for elt in np.array(original_cell_adaptation_table.columns):
+                    if elt in ['Obs','Feature','Measure']:
+                        original_cell_adaptation_table = original_cell_adaptation_table.astype({elt:str})
+                    else:
+                        original_cell_adaptation_table = original_cell_adaptation_table.astype({elt:float})
+                    cell_adaptation_group.create_dataset(
+                        elt, data=np.array(original_cell_adaptation_table[elt]))
+                
     
             
     
-        elif 'Cell_Feature' not in f.keys():
+        elif 'Cell_Feature' not in file.keys():
             if isinstance(original_cell_feature_table,pd.DataFrame) == True:
-                cell_feature_group = f.create_group('Cell_Feature')
+                cell_feature_group = file.create_group('Cell_Feature')
                 for elt in np.array(original_cell_feature_table.columns):
                     cell_feature_group.create_dataset(
                         elt, data=np.array(original_cell_feature_table[elt]))
@@ -361,27 +468,37 @@ def write_cell_file_h5(cell_file_path,
     
             # Store Cell fit table
             if isinstance(original_cell_fit_table,pd.DataFrame) == True:
-                cell_fit_group = f.create_group('Cell_Fit')
+                cell_fit_group = file.create_group('Cell_Fit')
                 
         
                 for elt in np.array(original_cell_fit_table.columns):
                     
                     cell_fit_group.create_dataset(
                         elt, data=np.array(original_cell_fit_table[elt]))
+                    
+            if isinstance(original_cell_adaptation_table,pd.DataFrame) == True:
+                cell_adaptation_group = file.create_group('Cell_Adaptation')
+                for elt in np.array(original_cell_adaptation_table.columns):
+                    if elt in ['Obs','Feature','Measure']:
+                        original_cell_adaptation_table = original_cell_adaptation_table.astype({elt:str})
+                    else:
+                        original_cell_adaptation_table = original_cell_adaptation_table.astype({elt:float})
+                    cell_adaptation_group.create_dataset(
+                        elt, data=np.array(original_cell_adaptation_table[elt]))
                 
     #store processing report
     original_processing_table = saving_dict["Processing report"]
-    if 'Processing_report' in f.keys() and overwrite == True:
-        del f["Processing_report"]
+    if 'Processing_report' in file.keys() and overwrite == True:
+        del file["Processing_report"]
         if isinstance(original_processing_table,pd.DataFrame) == True:
-            processing_report_group = f.create_group('Processing_report')
+            processing_report_group = file.create_group('Processing_report')
             for elt in np.array(original_processing_table.columns):
                 processing_report_group.create_dataset(
                     elt, data=np.array(original_processing_table[elt]))
             
-    elif 'Processing_report' not in f.keys():
+    elif 'Processing_report' not in file.keys():
         if isinstance(original_processing_table,pd.DataFrame) == True:
-            processing_report_group = f.create_group('Processing_report')
+            processing_report_group = file.create_group('Processing_report')
             for elt in np.array(original_processing_table.columns):
                 processing_report_group.create_dataset(
                     elt, data=np.array(original_processing_table[elt]))
@@ -389,7 +506,7 @@ def write_cell_file_h5(cell_file_path,
                 
     
 
-    f.close()
+    file.close()
 
 def open_json_config_file(config_file):
     '''
@@ -414,7 +531,7 @@ def open_json_config_file(config_file):
         new_line = pd.DataFrame(config_json.loc[db,"DB_parameters"],index=[0])
         
         new_line["path_to_saving_file"] = config_json['path_to_saving_file']
-        
+        new_line["path_to_QC_file"] = config_json['path_to_QC_file']
         config_df=pd.concat([config_df,new_line],axis=0,ignore_index=True)
     return config_df
 
@@ -571,7 +688,7 @@ def find_time_index(t, t_0):
     idx = np.argmin(abs(t - t_0))
     return idx
 
-def read_cell_file_h5(cell_file, config_line, selection=['All']):
+def read_cell_file_h5(cell_id, config_line, selection=['All']):
     '''
     Open cell h5 and returns the different elements
 
@@ -622,7 +739,29 @@ def read_cell_file_h5(cell_file, config_line, selection=['All']):
 
     '''
     
-    current_file = h5py.File(cell_file, 'r')
+    cell_dict = dict()
+    if 'Metadata' in selection and len(selection)==1:
+        ## Metadata ##
+        ## Specific case for Cell vizualization app, cell_id represent full path to cell file
+        current_file = h5py.File(cell_id, 'r')
+        if 'Metadata' not in current_file.keys():
+            print('File does not contains Metadata group')
+            return pd.DataFrame()
+        Metadata_group = current_file['Metadata']
+        Metadata_dict = {}
+        for data in Metadata_group.keys():
+            if type(Metadata_group[data][()]) == bytes:
+                Metadata_dict[data] = Metadata_group[data][()].decode('ascii')
+            else:
+                Metadata_dict[data] = Metadata_group[data][()]
+        Metadata_table = pd.DataFrame(Metadata_dict, index=[0])
+        return Metadata_table
+    
+    saving_folder_path = config_line['path_to_saving_file'].values[0]
+
+    cell_file_path = str(saving_folder_path+'Cell_'+str(cell_id)+'.h5')
+
+    current_file = h5py.File(cell_file_path, 'r')
 
     Full_TVC_table = pd.DataFrame()
     Full_SF_dict_table = pd.DataFrame()
@@ -631,22 +770,23 @@ def read_cell_file_h5(cell_file, config_line, selection=['All']):
     sweep_info_table = pd.DataFrame()
     Sweep_QC_table = pd.DataFrame()
     cell_fit_table = pd.DataFrame()
+    cell_adaptation_table = pd.DataFrame()
     cell_feature_table = pd.DataFrame()
     Processing_report_df = pd.DataFrame()
     
     if 'All' in selection:
         selection = ['TVC_SF', 'Sweep analysis','Sweep QC', 'Metadata', 'Firing analysis','Processing_report']
     
-    sub1 = "Cell_"
-    sub2 = ".h5"
+    # sub1 = "Cell_"
+    # sub2 = ".h5"
 
-    # getting index of substrings
-    idx1 = cell_file.index(sub1)
-    idx2 = cell_file.index(sub2)
+    # # getting index of substrings
+    # idx1 = cell_file.index(sub1)
+    # idx2 = cell_file.index(sub2)
  
-    # length of substring 1 is added to
-    # get string from next character
-    cell_id = cell_file[idx1 + len(sub1) : idx2]
+    # # length of substring 1 is added to
+    # # get string from next character
+    # cell_id = cell_file[idx1 + len(sub1) : idx2]
     
     if 'Metadata' in selection and 'Metadata' in current_file.keys():
         ## Metadata ##
@@ -659,6 +799,7 @@ def read_cell_file_h5(cell_file, config_line, selection=['All']):
             else:
                 Metadata_dict[data] = Metadata_group[data][()]
         Metadata_table = pd.DataFrame(Metadata_dict, index=[0])
+        
     
     elif 'Metadata' in selection and 'Metadata' not in current_file.keys():
         print('File does not contains Metadata group')
@@ -670,20 +811,20 @@ def read_cell_file_h5(cell_file, config_line, selection=['All']):
         sweep_list = list(SF_group.keys())
         
         
-        print(config_line)
+        #print(config_line)
         if isinstance(config_line,pd.DataFrame) == True:
             config_line = config_line.reset_index()
             config_line = config_line.to_dict('index')
             config_line = config_line[0]
-        print(config_line)    
+        #print(config_line)    
         path_to_python_folder = config_line['path_to_db_script_folder']
         python_file = config_line['python_file_name']
         module=python_file.replace('.py',"")
         full_path_to_python_script=str(path_to_python_folder+python_file)
-        print(module)
-        print(full_path_to_python_script)
+        # print(module)
+        # print(full_path_to_python_script)
         spec=importlib.util.spec_from_file_location(module,full_path_to_python_script)
-        print(spec)
+        #print(spec)
         DB_module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(DB_module)
         
@@ -775,10 +916,10 @@ def read_cell_file_h5(cell_file, config_line, selection=['All']):
                 if col != 'Sweep':
                     Sweep_QC_table=Sweep_QC_table.astype({str(col):"bool"})
         else:
-            print('File does not contains Sweep_QC group')
+            print('File does not contain Sweep_QC group')
 
     elif 'Sweep analysis' in selection and 'Sweep analysis' not in current_file.keys():
-        print('File does not contains Sweep analysis group')
+        print('File does not contain Sweep analysis group')
         
     
 
@@ -812,6 +953,21 @@ def read_cell_file_h5(cell_file, config_line, selection=['All']):
         cell_feature_table = pd.DataFrame(
             cell_feature_dict)
         cell_feature_table.index = cell_feature_table.index.astype(int)
+        
+        ## Cell_Adaptation ##
+        
+        Cell_adaptation_group = current_file['Cell_Adaptation']
+        cell_adaptation_dict={}
+        for data in Cell_adaptation_group.keys():
+            if type(Cell_adaptation_group[data][(0)]) == bytes:
+                cell_adaptation_dict[data] = np.array(
+                    [x.decode('ascii') for x in Cell_adaptation_group[data][()]], dtype='str')
+            else:
+                cell_adaptation_dict[data] = Cell_adaptation_group[data][()]
+
+        cell_adaptation_table = pd.DataFrame(
+            cell_adaptation_dict)
+        cell_adaptation_table.index = cell_adaptation_table.index.astype(int)
 
         
         
@@ -829,5 +985,252 @@ def read_cell_file_h5(cell_file, config_line, selection=['All']):
         Processing_report_df = pd.DataFrame(Processing_report_dict)
 
     current_file.close()
-    return Full_TVC_table, Full_SF_dict_table, Full_SF_table, Metadata_table, sweep_info_table, Sweep_QC_table, cell_fit_table, cell_feature_table,Processing_report_df
+    
+    cell_dict['Full_TVC_table'] = Full_TVC_table
+    cell_dict["Full_SF_table"] = Full_SF_table
+    cell_dict["Full_SF_dict_table"] = Full_SF_dict_table
+    cell_dict['Sweep_info_table'] = sweep_info_table
+    cell_dict['Sweep_QC_table'] = Sweep_QC_table
+    cell_dict['Metadata_table'] = Metadata_table
+    cell_dict['Cell_fit_table'] = cell_fit_table
+    cell_dict['Cell_feature_table'] = cell_feature_table
+    cell_dict['Cell_Adaptation'] = cell_adaptation_table
+    cell_dict['Processing_table'] = Processing_report_df
+    return cell_dict
+    #return Full_TVC_table, Full_SF_dict_table, Full_SF_table, Metadata_table, sweep_info_table, Sweep_QC_table, cell_fit_table, cell_feature_table,Processing_report_df
 
+def create_summary_tables(config_json_file_path, saving_path):
+    '''
+    Gather the information, and features of each cells analysed
+
+    Parameters
+    ----------
+    cell_id_list : List or array
+        List of cells to get information from.
+        
+    config_json_file : str
+        Path to JSON configuration file (ending .json).
+        
+    saving_path : str
+        Path to folder in which summary tables will be saved (ending with / or \)
+
+    Returns
+    -------
+    problem_cell : list
+        Return the cell_id for which the function encountered a problem.
+
+    '''
+    
+    unit_line=pd.DataFrame(['--','--','--','Hz/pA','pA','Hz','pA','Spike_index']).T
+    Full_feature_table=pd.DataFrame(columns=['Cell_id','Obs','I_O_QNRMSE','Gain','Threshold','Saturation_Frequency','Saturation_Stimulus','Adaptation_index','Response_type',"Output_Duration"])
+
+    cell_linear_values = pd.DataFrame(columns=['Cell_id','Input_Resistance_GOhms','Input_Resistance_GOhms_SD','Time_constant_ms','Time_constant_ms_SD'])
+    linear_values_unit = pd.DataFrame(['--','GOhms','GOhms','ms','ms']).T
+    linear_values_unit.columns=['Cell_id','Input_Resistance_GOhms','Input_Resistance_GOhms_SD','Time_constant_ms','Time_constant_ms_SD']
+    cell_linear_values = pd.concat([cell_linear_values,linear_values_unit],ignore_index=True)
+    
+    processing_time_table = pd.DataFrame(columns=['Cell_id','Processing_step','Processing_time'])
+    processing_time_unit_line = pd.DataFrame(['--','--','s']).T
+    processing_time_unit_line.columns=processing_time_table.columns
+    processing_time_table = pd.concat([processing_time_table,processing_time_unit_line],ignore_index=True)
+    problem_cell=[]
+    
+    config_json_file = open_json_config_file(config_json_file_path)
+    Full_population_calss_table = pd.DataFrame()
+    for line in config_json_file.index:
+        current_db_population_class_table = pd.read_csv(config_json_file.loc[line,'db_population_class_file'])
+        Full_population_calss_table= pd.concat([Full_population_calss_table,current_db_population_class_table])
+    Full_population_calss_table=Full_population_calss_table.astype({'Cell_id':'str'})
+    cell_id_list = Full_population_calss_table.loc[:,'Cell_id'].unique()
+    for cell_id in tqdm.tqdm(cell_id_list):
+        try:
+            current_DB = Full_population_calss_table.loc[Full_population_calss_table['Cell_id']==cell_id,'Database'].values[0]
+            config_line = config_json_file.loc[config_json_file['database_name']==current_DB,:]
+            cell_dict = read_cell_file_h5(str(cell_id),config_line,['Sweep analysis','Firing analysis','Processing_report'])
+            sweep_info_table = cell_dict['Sweep_info_table']
+            cell_fit_table = cell_dict['Cell_fit_table']
+            cell_feature_table = cell_dict['Cell_feature_table']
+            Processing_df = cell_dict['Processing_table']
+            #Full_TVC_table, Full_SF_dict_table, Full_SF_table, Metadata_table, sweep_info_table, Sweep_QC_table, cell_fit_table, cell_feature_table,Processing_df = read_cell_file_h5(str(cell_id),config_line,['Sweep analysis','Firing analysis','Processing_report'])
+    
+            IR_mean = np.nanmean(sweep_info_table['Input_Resistance_GOhms'])
+            IR_SD = np.nanstd(sweep_info_table['Input_Resistance_GOhms'])
+            
+            Time_cst_mean = np.nanmean(sweep_info_table['Time_constant_ms'])
+            Time_cst_SD = np.nanstd(sweep_info_table['Time_constant_ms'])
+            
+            cell_linear_values_line = pd.DataFrame([str(cell_id),IR_mean,IR_SD,Time_cst_mean,Time_cst_SD]).T
+            cell_linear_values_line.columns = ['Cell_id','Input_Resistance_GOhms','Input_Resistance_GOhms_SD','Time_constant_ms','Time_constant_ms_SD']
+            cell_linear_values=pd.concat([cell_linear_values,cell_linear_values_line],ignore_index=True)
+            
+            response_duration_dictionnary={
+                'Time_based':[.005, .010, .025, .050, .100, .250, .500],
+                'Index_based':list(np.arange(2,18)),
+                'Interval_based':list(np.arange(1,17))}
+            
+            if cell_fit_table.shape[0]==1:
+                for response_type in response_duration_dictionnary.keys():
+                    output_duration_list=response_duration_dictionnary[response_type]
+                    for output_duration in output_duration_list:
+                        I_O_obs=cell_fit_table.loc[(cell_fit_table['Response_type']==response_type )& (cell_fit_table['Output_Duration']==output_duration),"I_O_obs"]
+                        if len(I_O_obs)!=0:
+                            Gain,Threshold,Saturation_Frequency,Saturation_Stimulus,Adaptation_index = np.array(cell_feature_table.loc[(cell_fit_table['Response_type']==response_type )&
+                                                                                                                                       (cell_fit_table['Output_Duration']==output_duration),
+                                                                                                                                ["Gain","Threshold","Saturation_Frequency","Saturation_Stimulus","Adaptation_index"]]).tolist()[0]
+                            I_O_obs=I_O_obs.tolist()[0]
+                        else:
+                            I_O_obs="No_I_O_Adapt_computed"
+                            empty_array = np.empty(5)
+                            empty_array[:] = np.nan
+                            Gain,Threshold,Saturation_Frequency,Saturation_Stimulus,Adaptation_index = empty_array
+                        
+                        new_line=pd.DataFrame([str(cell_id),I_O_obs,Gain,Threshold,Saturation_Frequency,Saturation_Stimulus,Adaptation_index,response_type,output_duration]).T
+                        new_line.columns=Full_feature_table.columns
+                        Full_feature_table = pd.concat([Full_feature_table,new_line],ignore_index=True)
+            else:
+                cell_feature_table = cell_feature_table.merge(
+            cell_fit_table.loc[:,['I_O_obs','Response_type','Output_Duration','I_O_QNRMSE']], how='inner', on=['Response_type','Output_Duration'])
+    
+                cell_feature_table['Cell_id']=str(cell_id)
+                cell_feature_table=cell_feature_table.rename(columns={"I_O_obs": "Obs"})
+                cell_feature_table=cell_feature_table.reindex(columns=Full_feature_table.columns)
+                Full_feature_table = pd.concat([Full_feature_table,cell_feature_table],ignore_index=True)
+            
+            for step in Processing_df.loc[:,'Processing_step'].unique():
+                sub_processing_table = Processing_df.loc[Processing_df['Processing_step']==step,:]
+                sub_processing_table=sub_processing_table.reset_index()
+                sub_processing_time = sub_processing_table.loc[0,"Processing_time"]
+                sub_processing_time = float(sub_processing_time.replace("s",""))
+                new_line = pd.DataFrame([cell_id,step,sub_processing_time]).T
+                
+                new_line.columns = processing_time_table.columns
+                processing_time_table=pd.concat([processing_time_table,new_line],ignore_index=True,axis=0)
+        except:
+            problem_cell.append(cell_id)
+            
+    for response_type in response_duration_dictionnary.keys():
+        output_duration_list=response_duration_dictionnary[response_type]
+        for output_duration in output_duration_list:
+            
+            new_table = pd.DataFrame(columns=['Cell_id','Obs','I_O_QNRMSE','Gain','Threshold','Saturation_Frequency','Saturation_Stimulus','Adaptation_index'])
+            unit_line.columns=new_table.columns
+            new_table = pd.concat([new_table,unit_line],ignore_index=True)
+            
+            sub_table=Full_feature_table.loc[(Full_feature_table['Response_type']==response_type)&(Full_feature_table['Output_Duration']==output_duration),]
+            sub_table=sub_table.drop(['Response_type','Output_Duration'], axis=1)
+            sub_table=sub_table.reindex(columns=new_table.columns)
+            
+            
+            new_table = pd.concat([new_table,sub_table],ignore_index=True)
+            if len(new_table['Cell_id'].unique())!=new_table.shape[0]:
+                return str('problem with table'+str(response_type)+'_'+str(output_duration))
+            
+            
+            if response_type == 'Time_based':
+                output_duration*=1000
+                output_duration=str(str(int(output_duration))+'ms')
+                
+            
+            new_table.to_csv(str(saving_path+str(response_type+'_'+str(output_duration))+'.csv'))
+    cell_linear_values.to_csv(str(saving_path+ 'Full_Cell_linear_values.csv')) 
+    processing_time_table.to_csv(str(saving_path+'Full_Processing_Times.csv'))
+    return problem_cell    
+
+
+def gather_all_features_table(folder):
+    
+    file_dict={'Time_based':['5ms','10ms','25ms','50ms','100ms','250ms','500ms'],
+               "Index_based":['Index_2','Index_3','Index_4','Index_5','Index_6','Index_7','Index_8','Index_9','Index_10','Index_11','Index_12','Index_13','Index_14','Index_15','Index_16','Index_17'],
+               "Interval_based":['Interval_1','Interval_2','Interval_3','Interval_4','Interval_5','Interval_6','Interval_7','Interval_8','Interval_9','Interval_10','Interval_11','Interval_12','Interval_13','Interval_14','Interval_15','Interval_16']}
+    folder_directory = str(folder+ 'Full_Feature_Table_')
+    dfs = []
+    for output_type in file_dict.keys():
+        response_duration_list = file_dict[output_type]
+        for response_duration in response_duration_list:
+            numeric_values = re.findall(r'\d+', response_duration)
+        
+            # Convert the extracted numeric values to integers
+            numeric_values = [int(num) for num in numeric_values]
+            if output_type !='Time_based':
+                file_str = str(folder_directory+output_type+"_"+str(numeric_values[0])+'.csv')
+            else:
+                file_str = str(folder_directory+output_type+"_"+response_duration+'.csv')
+            df = pd.read_csv(file_str,index_col=0)
+            # Add file name suffix to each column
+            df.columns = ['Cell_id' if col =='Cell_id' else col + '_' + str(response_duration) for col in df.columns ]
+            dfs.append(df)
+    Full_I_O_features_table = dfs[0]  # Initialize merged DataFrame with the first DataFrame
+    for df in dfs[1:]:
+        Full_I_O_features_table = pd.merge(Full_I_O_features_table, df, on='Cell_id')
+        
+    return Full_I_O_features_table
+
+def summarize_features_evolution(Full_I_O_features_table):
+    file_dict={'Time_based':['5ms','10ms','25ms','50ms','100ms','250ms','500ms'],
+               "Index_based":['Index_2','Index_3','Index_4','Index_5','Index_6','Index_7','Index_8','Index_9','Index_10','Index_11','Index_12','Index_13','Index_14','Index_15','Index_16','Index_17'],
+               "Interval_based":['Interval_1','Interval_2','Interval_3','Interval_4','Interval_5','Interval_6','Interval_7','Interval_8','Interval_9','Interval_10','Interval_11','Interval_12','Interval_13','Interval_14','Interval_15','Interval_16']}
+
+
+    
+    Full_I_O_features_table_without_units = Full_I_O_features_table.iloc[1:,:]
+    cell_features_slope_int_table = pd.DataFrame(index=Full_I_O_features_table_without_units.loc[:,'Cell_id'].unique())
+    cell_features_slope_int_table.loc[:,'Test']=0
+    for output_type in file_dict.keys():
+        if output_type == 'Time_based':
+            filtered_cols = ['Cell_id'] + [col for col in Full_I_O_features_table_without_units.columns if 'ms' in col]
+        elif output_type == 'Index_based':
+            filtered_cols = ['Cell_id'] + [col for col in Full_I_O_features_table_without_units.columns if 'Index' in col]
+        elif output_type == 'Interval_based':
+            filtered_cols = ['Cell_id'] + [col for col in Full_I_O_features_table_without_units.columns if 'Interval' in col]
+        sub_IO_table = Full_I_O_features_table_without_units[filtered_cols]
+        
+        features_list = ['Gain','Threshold','Saturation_Stimulus','Saturation_Amplitude']
+        
+        for feature in features_list:
+            filtered_features_cols = ['Cell_id'] + [col for col in sub_IO_table.columns if feature in col]
+            sub_IO_feature_table = sub_IO_table[filtered_features_cols]
+            for col in sub_IO_feature_table.columns:
+                if col != 'Cell_id':
+                    sub_IO_feature_table[col] = sub_IO_feature_table[col].astype(float)
+                    
+            for idx, row in tqdm.tqdm(sub_IO_feature_table.iterrows()):
+                # Extract x values (column names) and y values (row values)
+                cell_id = row['Cell_id']
+                row_data = row.drop('Cell_id')
+                row_data = row_data.dropna()  # Drop columns with NaN values
+                if len(row_data) > 0:
+                    
+                    x_values = [int(''.join(filter(str.isdigit, col))) * 1e-3 for col in row_data.index]
+                    y_values = row_data.tolist()
+            
+                    # Perform linear regression using custom function
+                    slope,intercept=fir_an.linear_fit(x_values,y_values)
+                else:
+                    slope, intercept = np.nan, np.nan
+                x_values = [int(''.join(filter(str.isdigit, col))) for col in sub_IO_feature_table.columns if col != 'Cell_id']  # Extract numerical value from column name
+                y_values = row.drop('Cell_id').tolist()
+                
+                
+                
+                cell_features_slope_int_table.loc[cell_id,str(feature+'_'+output_type+'_Slope')]=slope
+                cell_features_slope_int_table.loc[cell_id,str(feature+'_'+output_type+'_Intercept')]=intercept
+                
+    cell_features_slope_int_table_with_cell_ids = cell_features_slope_int_table.reset_index()
+    cell_features_slope_int_table_with_cell_ids=cell_features_slope_int_table_with_cell_ids.drop(columns=['Test'])
+    cell_features_slope_int_table_with_cell_ids=cell_features_slope_int_table_with_cell_ids.rename(columns={'index':'Cell_id'})
+    unit_line = pd.DataFrame(["--","Hz/pA/ms","Hz/pA","pA/ms","pA","pA/ms","pA","Hz/ms","Hz","Hz/pA/Index","Hz/pA","pA/Index","pA","pA/Index","pA","Hz/Index","Hz","Hz/pA/Interval","Hz/pA","pA/Interval","pA","pA/Interval","pA","Hz/Interval","Hz"]).T
+    unit_line.columns = cell_features_slope_int_table_with_cell_ids.columns
+    
+    cell_features_slope_int_table_with_cell_ids=pd.concat([unit_line,cell_features_slope_int_table_with_cell_ids],axis=0,ignore_index=True)
+    return cell_features_slope_int_table_with_cell_ids
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    

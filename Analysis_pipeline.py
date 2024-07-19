@@ -23,6 +23,7 @@ import Sweep_analysis as sw_an
 import Spike_analysis as sp_an
 import Firing_analysis as fir_an
 import Ordinary_functions as ordifunc
+import Sweep_QC_analysis as sw_qc
 
 import concurrent.futures
 
@@ -67,8 +68,7 @@ class GeneralParameters(ags.ArgSchema):
     
     path_to_saving_file = ags.fields.String()
     
-    
-
+    path_to_QC_file = ags.fields.String()
     
     DB_parameters = ags.fields.Nested(DatabaseClass,
                                   required=True,
@@ -76,11 +76,7 @@ class GeneralParameters(ags.ArgSchema):
                                   description="Schema for processing data originating from a specific Database")
     
 
-
-
-
-
-def main (path_to_saving_file, DB_parameters, **kwargs):
+def main (path_to_saving_file, path_to_QC_file, DB_parameters, **kwargs):
     
     problem_cell = []
     nb_of_workers_to_use = int(input('\u001b[1m \nIndicate the number of CPU cores you want to allocate for the analysis pipeline; Set 0 for default (half of the computer"s CPU cores) \u001b[0m \n' ))
@@ -128,6 +124,7 @@ def main (path_to_saving_file, DB_parameters, **kwargs):
                       current_db,
                       module,
                       full_path_to_python_script,
+                      path_to_QC_file, 
                       path_to_saving_file,
                       overwrite_cell_files,
                       analysis_to_perform] for x in cell_id_list]
@@ -146,7 +143,7 @@ def main (path_to_saving_file, DB_parameters, **kwargs):
      
                     
 def cell_processing(args_list):
-    cell_id,current_db, module, full_path_to_python_script, path_to_saving_file,overwrite_cell_files, analysis_to_perform = args_list
+    cell_id,current_db, module, full_path_to_python_script, path_to_QC_file,  path_to_saving_file,overwrite_cell_files, analysis_to_perform = args_list
     try:
         
         
@@ -172,6 +169,7 @@ def cell_processing(args_list):
                 cell_sweep_info_table='--'
                 cell_Sweep_QC_table='--'
                 cell_fit_table='--'
+                cell_adaptation_table = '--'
                 cell_feature_table='--'
                 Metadata_dict='--'
                 
@@ -195,13 +193,15 @@ def cell_processing(args_list):
                 cell_sweep_info_table, processing_table = perform_sweep_related_analysis(Full_TVC_table, cell_stim_time_table, nb_of_workers_to_use, processing_table)
                 
                 
-                cell_Sweep_QC_table, processing_table = perform_QC_analysis(cell_sweep_info_table, processing_table)
+                #cell_Sweep_QC_table, processing_table = perform_QC_analysis(cell_sweep_info_table, processing_table)
+                cell_Sweep_QC_table, processing_table = perform_QC_analysis(Full_TVC_table, cell_sweep_info_table, path_to_QC_file, processing_table)
+                
                 
                 current_process = "Spike analysis"
                 Full_SF_dict, Full_SF_table, processing_table = perform_spike_related_analysis(Full_TVC_table, cell_sweep_info_table, processing_table)
                 
                 current_process = "Firing analysis"
-                cell_feature_table, cell_fit_table, processing_table = perform_firing_related_analysis(Full_SF_table, cell_sweep_info_table, cell_Sweep_QC_table, processing_table)
+                cell_feature_table, cell_fit_table,cell_adaptation_table, processing_table = perform_firing_related_analysis(Full_SF_table, cell_sweep_info_table, cell_Sweep_QC_table, processing_table)
                 
                 current_process = "Metadata"
                 Metadata_dict = db_population_class.loc[db_population_class['Cell_id'] == cell_id,:].iloc[0,:].to_dict()
@@ -210,7 +210,8 @@ def cell_processing(args_list):
                                        "Sweep QC" : cell_Sweep_QC_table}
                 
                 firing_dict={"Cell_feature" : cell_feature_table,
-                             "Cell_fit" : cell_fit_table}
+                             "Cell_fit" : cell_fit_table,
+                             "Cell_Adaptation" : cell_adaptation_table}
                 
                 saving_dict = {"Sweep analysis" : Sweep_analysis_dict,
                                "Spike analysis" : Full_SF_dict,
@@ -225,7 +226,8 @@ def cell_processing(args_list):
                     current_process = "Sweep analysis"
                     is_Processing_report_df = pd.DataFrame()
                     if os.path.exists(saving_file_cell) == True:
-                        _, _, _, _, _, _, _, _,is_Processing_report_df = ordifunc.read_cell_file_h5(saving_file_cell, current_db, selection = ['Processing_report'])
+                        cell_dict = ordifunc.read_cell_file_h5(cell_id, current_db, selection = ['Processing_report'])
+                        is_Processing_report_df = cell_dict['Processing_table']
                     if is_Processing_report_df.shape[0]!=0:
                         
                         processing_table = is_Processing_report_df
@@ -249,7 +251,8 @@ def cell_processing(args_list):
                     cell_sweep_info_table, processing_table = perform_sweep_related_analysis(Full_TVC_table, cell_stim_time_table, nb_of_workers_to_use, processing_table)
                     
                     
-                    cell_Sweep_QC_table, processing_table = perform_QC_analysis(cell_sweep_info_table, processing_table)
+                    #cell_Sweep_QC_table, processing_table = perform_QC_analysis(cell_sweep_info_table, processing_table)
+                    cell_Sweep_QC_table, processing_table = perform_QC_analysis(Full_TVC_table, cell_sweep_info_table, path_to_QC_file, processing_table)
                 
                     Sweep_analysis_dict = {"Sweep info" : cell_sweep_info_table,
                                            "Sweep QC" : cell_Sweep_QC_table}
@@ -275,14 +278,18 @@ def cell_processing(args_list):
                     is_sweep_QC_table = pd.DataFrame()
                     is_Processing_report_df = pd.DataFrame()
                     if os.path.exists(saving_file_cell) == True:
-                        _, _, _, _, is_sweep_info_table, is_sweep_QC_table, _, _,is_Processing_report_df = ordifunc.read_cell_file_h5(saving_file_cell, current_db, selection = ['Sweep analysis','Sweep QC','Processing_report'])
-                        
+                        #_, _, _, _, is_sweep_info_table, is_sweep_QC_table, _, _,is_Processing_report_df = ordifunc.read_cell_file_h5(cell_id, current_db, selection = ['Sweep analysis','Sweep QC','Processing_report'])
+                        cell_dict = ordifunc.read_cell_file_h5(cell_id, current_db, selection = ['Sweep analysis','Sweep QC','Processing_report'])
+                        is_sweep_info_table = cell_dict["Sweep_info_table"]
+                        is_sweep_QC_table = cell_dict['Sweep_QC_table']
+                        is_Processing_report_df = cell_dict['Processing_table']
                     if is_sweep_info_table.shape[0]==0 or is_sweep_QC_table.shape[0]==0 or is_Processing_report_df.shape[0]==0 or os.path.exists(saving_file_cell) == False:
     
                             cell_sweep_info_table, processing_table = perform_sweep_related_analysis(Full_TVC_table, cell_stim_time_table, nb_of_workers_to_use, processing_table)
                             
                             
-                            cell_Sweep_QC_table, processing_table = perform_QC_analysis(cell_sweep_info_table, processing_table)
+                            #cell_Sweep_QC_table, processing_table = perform_QC_analysis(cell_sweep_info_table, processing_table)
+                            cell_Sweep_QC_table, processing_table = perform_QC_analysis(Full_TVC_table, cell_sweep_info_table, path_to_QC_file, processing_table)
                     else: 
                         cell_sweep_info_table = is_sweep_info_table
                         cell_Sweep_QC_table = is_sweep_QC_table
@@ -315,14 +322,19 @@ def cell_processing(args_list):
     
                     if os.path.exists(saving_file_cell) == True:
     
-                        _, _, is_SF_table, _, is_sweep_info_table, is_sweep_QC_table, _, _,is_Processing_report_df = ordifunc.read_cell_file_h5(saving_file_cell, current_db, selection = ['Sweep analysis','Sweep QC', 'TVC_SF','Processing_report'])
-                        
+                        #_, _, is_SF_table, _, is_sweep_info_table, is_sweep_QC_table, _, _,is_Processing_report_df = ordifunc.read_cell_file_h5(cell_id, current_db, selection = ['Sweep analysis','Sweep QC', 'TVC_SF','Processing_report'])
+                        cell_dict = ordifunc.read_cell_file_h5(cell_id, current_db, selection = ['Sweep analysis','Sweep QC', 'TVC_SF','Processing_report'])
+                        is_SF_table = cell_dict['Full_SF_dict_table']
+                        is_sweep_info_table = cell_dict["Sweep_info_table"]
+                        is_sweep_QC_table = cell_dict['Sweep_QC_table']
+                        is_Processing_report_df = cell_dict['Processing_table']
                     
                     if is_SF_table.shape[0]==0 or is_sweep_info_table.shape[0]==0 or is_sweep_QC_table.shape[0]==0 or is_Processing_report_df.shape[0]==0 or os.path.exists(saving_file_cell) == False:
                             
                             cell_sweep_info_table, processing_table = perform_sweep_related_analysis(Full_TVC_table, cell_stim_time_table, nb_of_workers_to_use, processing_table)
                             
-                            cell_Sweep_QC_table, processing_table = perform_QC_analysis(cell_sweep_info_table, processing_table)
+                            #cell_Sweep_QC_table, processing_table = perform_QC_analysis(cell_sweep_info_table, processing_table)
+                            cell_Sweep_QC_table, processing_table = perform_QC_analysis(Full_TVC_table, cell_sweep_info_table, path_to_QC_file, processing_table)
                             
                             Full_SF_dict, Full_SF_table, processing_table = perform_spike_related_analysis(Full_TVC_table, cell_sweep_info_table, processing_table)
                     else: 
@@ -333,10 +345,11 @@ def cell_processing(args_list):
                         Full_SF_table = is_SF_table
                         processing_table = processing_table[processing_table['Processing_step'] != "Firing analysis"]
     
-                    cell_feature_table, cell_fit_table, processing_table = perform_firing_related_analysis(Full_SF_table, cell_sweep_info_table, cell_Sweep_QC_table, processing_table)
+                    cell_feature_table, cell_fit_table, cell_adaptation_table, processing_table = perform_firing_related_analysis(Full_SF_table, cell_sweep_info_table, cell_Sweep_QC_table, processing_table)
                     
                     firing_dict={"Cell_feature" : cell_feature_table,
-                                 "Cell_fit" : cell_fit_table}
+                                 "Cell_fit" : cell_fit_table,
+                                 "Cell_Adaptation" : cell_adaptation_table}
                     
                     saving_dict.update({"Firing analysis" : firing_dict})
                     
@@ -436,13 +449,16 @@ def perform_sweep_related_analysis (Full_TVC_table, cell_stim_time_table, nb_of_
     
     return cell_sweep_info_table, processing_table
         
-def perform_QC_analysis(cell_sweep_info_table, processing_table):
+def perform_QC_analysis(Full_TVC_table, cell_sweep_info_table, path_to_QC_file, processing_table):
     ### Sweep_QC_table
     current_process = "Sweep QC"
     start_time=time.time()
-    
+    QC_function_module = os.path.basename(path_to_QC_file)
     with warnings.catch_warnings(record=True) as warning_cell_QC_table:
-        cell_Sweep_QC_table = sw_an.create_cell_sweep_QC_table_new_version(cell_sweep_info_table)
+        
+        cell_Sweep_QC_table, error_message = sw_qc.run_QC_for_cell(Full_TVC_table, cell_sweep_info_table, QC_function_module, path_to_QC_file)
+        
+        #cell_Sweep_QC_table = sw_qc.create_cell_sweep_QC_table_new_version(cell_sweep_info_table)
     end_time=time.time()
     processing_time = end_time - start_time
     processing_table = append_processing_table(current_process, processing_table, warning_cell_QC_table, processing_time)
@@ -487,11 +503,14 @@ def perform_firing_related_analysis(Full_SF_table, cell_sweep_info_table,cell_Sw
                                                                    cell_sweep_info_table,
                                                                    response_duration_dictionnary,
                                                                    cell_Sweep_QC_table)
+        
+        cell_adaptation_table = fir_an.compute_cell_adaptation_behavior(Full_SF_table, cell_sweep_info_table, cell_Sweep_QC_table)
+        
     end_time=time.time()
     processing_time = end_time - start_time
     processing_table = append_processing_table(current_process, processing_table, warning_cell_feature_table, processing_time)
     
-    return cell_feature_table, cell_fit_table, processing_table
+    return cell_feature_table, cell_fit_table, cell_adaptation_table ,processing_table
     
     
     
