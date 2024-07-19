@@ -17,6 +17,8 @@ if __name__ == "__main__":
 
     number_of_DB = int(input("\u001b[1m \nHow many DB do you have to process? \u001b[0m \n"))
     
+    path_to_QC_file = str(input('\u001b[1m \nIndicate path to Quality Criteria python file(finishing by .py) containing the function assessing Quality Criteria \u001b[0m \n'))
+    
     DB_parameters = []
     for db in range(number_of_DB):
         database_name = str(input('\u001b[1m \nEnter Database Name: \u001b[0m \n'))
@@ -46,11 +48,12 @@ if __name__ == "__main__":
     configuration_file = {
         
         'path_to_saving_file' :path_to_saving_file,
+        'path_to_QC_file' : path_to_QC_file,
         'DB_parameters':DB_parameters
         }
     
     # Serializing json
-    configuration_file_json = json.dumps(configuration_file, indent=3)
+    configuration_file_json = json.dumps(configuration_file, indent=4)
      
     # Writing to sample.json
     with open(path_to_save_json_file, "w") as outfile:
