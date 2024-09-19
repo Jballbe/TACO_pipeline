@@ -38,7 +38,7 @@ def create_cell_Full_SF_dict_table(original_Full_TVC_table, original_cell_sweep_
     
     sweep_list = np.array(Full_TVC_table['Sweep'])
     
-    
+
     Full_SF_dict_table=pd.DataFrame(columns=['Sweep',"SF_dict"])
     for current_sweep in sweep_list:
         
@@ -146,12 +146,22 @@ def create_SF_table(original_TVC_table, SF_dict):
     TVC_table = original_TVC_table.copy()
     SF_table = pd.DataFrame(columns=['Time_s', 'Membrane_potential_mV', 'Input_current_pA',
                                  'Potential_first_time_derivative_mV/s', 'Potential_second_time_derivative_mV/s/s', 'Feature'])
+    SF_table = SF_table.astype({'Time_s':'float',
+                                'Membrane_potential_mV' : 'float',
+                                'Input_current_pA' : 'float',
+                                'Potential_first_time_derivative_mV/s' : 'float', 
+                                'Potential_second_time_derivative_mV/s/s' : 'float', 
+                                'Feature':'object'})
+                           
   
     for feature in SF_dict.keys():
         
         current_feature_table = TVC_table.loc[SF_dict[feature], :].copy()
         current_feature_table['Feature'] = feature
-        SF_table = pd.concat([SF_table, current_feature_table])
+
+        if current_feature_table.shape[0]!=0:
+            
+            SF_table = pd.concat([SF_table, current_feature_table],ignore_index = True)
         
     SF_table = SF_table.sort_values(by=['Time_s'])
     
@@ -210,6 +220,7 @@ def get_spike_half_width(TVC_table_original, SF_table_original):
                 trough_time=trough_time[:-1]
                 
     spike_index = 0
+    
     for threshold, trough, peak, spike_time in zip(threshold_time, trough_time, peak_time, spike_time_list):
         
         threshold_to_peak_table = TVC_table.loc[(TVC_table['Time_s']>=threshold)&(TVC_table['Time_s']<=peak), :]
@@ -219,21 +230,42 @@ def get_spike_half_width(TVC_table_original, SF_table_original):
         spike_heigth = threshold_to_peak_table.loc[threshold_to_peak_table['Time_s'] == peak,'Membrane_potential_mV'].values[0] - threshold_to_peak_table.loc[threshold_to_peak_table['Time_s'] == threshold,'Membrane_potential_mV'].values[0]
         spike_height_line = pd.DataFrame([spike_time, spike_heigth, stim_amp_pA, np.nan, np.nan, "Spike_heigth", spike_index ]).T
         spike_height_line.columns = SF_table_original.columns
+        spike_height_line = spike_height_line.astype({'Time_s':'float',
+                                    'Membrane_potential_mV' : 'float',
+                                    'Input_current_pA' : 'float',
+                                    'Potential_first_time_derivative_mV/s' : 'float', 
+                                    'Potential_second_time_derivative_mV/s/s' : 'float', 
+                                    'Feature':'object',
+                                    "Spike_index" : 'int'})
+        
         SF_table_original = pd.concat([SF_table_original,spike_height_line ],ignore_index=True)
         
-        half_spike_heigth = (threshold_to_peak_table.loc[threshold_to_peak_table['Time_s'] == peak,'Membrane_potential_mV'].values[0]+threshold_to_peak_table.loc[threshold_to_peak_table['Time_s'] == threshold,'Membrane_potential_mV'].values[0])/2
+        putative_half_spike_heigth = (threshold_to_peak_table.loc[threshold_to_peak_table['Time_s'] == peak,'Membrane_potential_mV'].values[0]+threshold_to_peak_table.loc[threshold_to_peak_table['Time_s'] == threshold,'Membrane_potential_mV'].values[0])/2
         
         
-        half_width_start_index = ordifunc.find_time_index(membrane_voltage_array, half_spike_heigth)
-        half_width_start = time_array[half_width_start_index]
+        putative_half_width_start_index = ordifunc.find_time_index(membrane_voltage_array, putative_half_spike_heigth)
+        putative_half_width_start = time_array[putative_half_width_start_index]
         
         peak_to_trough_table = TVC_table.loc[(TVC_table['Time_s']>=peak)&(TVC_table['Time_s']<=trough), :]
+
         membrane_voltage_array = np.array(peak_to_trough_table.loc[:,'Membrane_potential_mV'])
         time_array = np.array(peak_to_trough_table.loc[:,'Time_s'])
         
-        assert membrane_voltage_array[0] >= half_spike_heigth >= membrane_voltage_array[-1], "Given potential ({:f}) is outside of potential range ({:f}, {:f})".format(half_spike_heigth, membrane_voltage_array[0], membrane_voltage_array[-1])
+        if putative_half_spike_heigth < membrane_voltage_array[-1]: # if spike do not decreases enough to reach half spike computed in ascending phase, then 
+            half_spike_heigth_end = membrane_voltage_array[-2]
 
-        half_width_end_index = np.argmin(abs(membrane_voltage_array - half_spike_heigth))
+
+            half_width_start_index = ordifunc.find_time_index(membrane_voltage_array, half_spike_heigth_end)
+            half_width_start = time_array[half_width_start_index]
+            
+        else:
+            half_spike_heigth_end = putative_half_spike_heigth
+            half_width_start = putative_half_width_start
+            
+        
+        #assert membrane_voltage_array[0] >= half_spike_heigth_end >= membrane_voltage_array[-1], "Given potential ({:f}) is outside of potential range ({:f}, {:f})".format(half_spike_heigth, membrane_voltage_array[0], membrane_voltage_array[-1])
+
+        half_width_end_index = np.argmin(abs(membrane_voltage_array - half_spike_heigth_end))
         #half_width_end_index = ordifunc.find_time_index(membrane_voltage_array, half_spike_heigth)
         half_width_end = time_array[half_width_end_index]
         
@@ -241,6 +273,13 @@ def get_spike_half_width(TVC_table_original, SF_table_original):
         
         half_width_line = pd.DataFrame([half_height_width, np.nan, stim_amp_pA, np.nan, np.nan, "Spike_width_at_half_heigth",spike_index ]).T
         half_width_line.columns = SF_table_original.columns
+        half_width_line = spike_height_line.astype({'Time_s':'float',
+                                    'Membrane_potential_mV' : 'float',
+                                    'Input_current_pA' : 'float',
+                                    'Potential_first_time_derivative_mV/s' : 'float', 
+                                    'Potential_second_time_derivative_mV/s/s' : 'float', 
+                                    'Feature':'object',
+                                    "Spike_index" : 'int'})
         SF_table_original = pd.concat([SF_table_original,half_width_line ],ignore_index=True)
         
         spike_index+=1
@@ -283,13 +322,13 @@ def identify_spike(membrane_trace_array,time_array, current_trace, stim_start_ti
                         
 
     first_derivative=ordifunc.get_derivative(membrane_trace_array,time_array)
-    first_derivative=np.insert(first_derivative,0,np.nan)
+    #first_derivative=np.insert(first_derivative,0,np.nan)
 
     second_derivative=ordifunc.get_derivative(first_derivative,time_array)
-    
-    filtered_second_derivative = ordifunc.filter_trace(second_derivative,time_array[2:],filter=1.,do_plot=False)
-    second_derivative=np.insert(second_derivative,0,[np.nan,np.nan])
-    filtered_second_derivative = np.insert(filtered_second_derivative,0,[np.nan,np.nan])
+    filtered_second_derivative = ordifunc.filter_trace(second_derivative,time_array,filter=1.,do_plot=False)
+    #filtered_second_derivative = ordifunc.filter_trace(second_derivative,time_array[2:],filter=1.,do_plot=False)
+    #second_derivative=np.insert(second_derivative,0,[np.nan,np.nan])
+    #filtered_second_derivative = np.insert(filtered_second_derivative,0,[np.nan,np.nan])
     TVC_table=pd.DataFrame({'Time_s':time_array,
                                'Membrane_potential_mV':membrane_trace_array,
                                'Input_current_pA':current_trace,
@@ -1036,9 +1075,9 @@ def find_fast_AHP_indexes(v, t, spike_indexes, peak_indexes, clipped=None, end=N
     #                     np.min(v[peak:wnd])<=thresh 
     #                     for peak , wnd,thresh
     #                         in zip(peak_indexes, window_closing_idx,spike_indexes) ] #Detect lowest voltage value in a 5ms window after last peak
-    
-    if fast_AHP_indexes[-1]>=end_index: #If the last fast trough detected is after end_time index (because of the closing window of 5ms), redefine it at end_index
-        fast_AHP_indexes[-1]=end_index
+    if len(fast_AHP_indexes) > 0:
+        if fast_AHP_indexes[-1]>=end_index: #If the last fast trough detected is after end_time index (because of the closing window of 5ms), redefine it at end_index
+            fast_AHP_indexes[-1]=end_index
     # if clipped[-1]:
     #     # If last spike is cut off by the end of the window, trough is undefined
     #     trough_indexes[-1] = np.nan

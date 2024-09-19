@@ -74,7 +74,7 @@ Time_constant_ms = globals_module.Time_constant_ms
 Time_s_trace = globals_module.Time_s_trace
 
 
-##### DO NOT REMOVE
+##### DO NOT REMOVE WHAT IS ABOVE THIS LINE
 
 def check_upper_bound_voltage_trace():
     Obs = "Mean Voltage Trace <= 10mV"
@@ -120,16 +120,15 @@ def check_upper_bound_amplitude_current_trace():
         passed_QC = True
     return Obs, passed_QC
 
-
-
-def check_bridge_error_upper_bound():
-    Obs = "Bridge error <= 20 MOhms"
-    
-    if Bridge_Error_GOhms >= 20:
+def check_input_resistance_is_positive():
+    Obs = "Input resistance > 0 GOhms"
+    if Input_Resistance_GOhms <= 0.:
         passed_QC = False
     else:
         passed_QC = True
     return Obs, passed_QC
+
+
 
 
 

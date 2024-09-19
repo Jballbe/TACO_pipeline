@@ -92,6 +92,9 @@ def main (path_to_saving_file, path_to_QC_file, DB_parameters, **kwargs):
     overwrite_cell_files = eval(input('\u001b[1m \n If a cell already has a file in the saving folder, do you want to overwrite the existing file? Answer True or False. If False, then a cell which already has a corresponding file will not be processed by the pipeline. \u001b[0m \n'))
     
     for current_db in DB_parameters:
+        current_db['path_to_saving_file'] = path_to_saving_file
+        
+        
         database = current_db['database_name']
         path_to_python_folder = current_db['path_to_db_script_folder']
         python_file=current_db['python_file_name']
@@ -135,8 +138,9 @@ def main (path_to_saving_file, path_to_QC_file, DB_parameters, **kwargs):
                 cell_id_problem = f.result()
                 if cell_id_problem is not None:
                     problem_cell.append(f.result())
-                
+
         print(f'Database {database} processed')
+    
     print('Done')
     return f'Problem occured with cells : {problem_cell}'
     
@@ -177,15 +181,28 @@ def cell_processing(args_list):
                 
                 current_cell_sweep_list = db_cell_sweep_file.loc[db_cell_sweep_file['Cell_id'] == cell_id, "Sweep_id"].to_list()
                 # Gather for the different sweeps of the cell, time, voltage and current traces, as weel as stimulus start and end times
-                args_list = [[module,
+                
+                
+                # args_list = [[module,
+                #               full_path_to_python_script,
+                #               current_db["db_function_name"],
+                #               db_original_file_directory,
+                #               cell_id,
+                #               x,
+                #               db_cell_sweep_file,
+                #               current_db["stimulus_time_provided"],
+                #               current_db["db_stimulus_duration"]] for x in current_cell_sweep_list]
+                
+                args_list = [module,
                               full_path_to_python_script,
                               current_db["db_function_name"],
                               db_original_file_directory,
                               cell_id,
-                              x,
+                              current_cell_sweep_list,
                               db_cell_sweep_file,
                               current_db["stimulus_time_provided"],
-                              current_db["db_stimulus_duration"]] for x in current_cell_sweep_list]
+                              current_db["db_stimulus_duration"]]
+                
                 
                 Full_TVC_table, cell_stim_time_table, processing_table = get_db_traces(args_list, nb_of_workers_to_use, processing_table)
                 
@@ -226,7 +243,8 @@ def cell_processing(args_list):
                     current_process = "Sweep analysis"
                     is_Processing_report_df = pd.DataFrame()
                     if os.path.exists(saving_file_cell) == True:
-                        cell_dict = ordifunc.read_cell_file_h5(cell_id, current_db, selection = ['Processing_report'])
+                        current_db_df = pd.DataFrame(current_db,index=[0])
+                        cell_dict = ordifunc.read_cell_file_h5(cell_id, current_db_df, selection = ['Processing_report'])
                         is_Processing_report_df = cell_dict['Processing_table']
                     if is_Processing_report_df.shape[0]!=0:
                         
@@ -235,15 +253,25 @@ def cell_processing(args_list):
                         processing_table = processing_table[processing_table['Processing_step']!="Sweep QC"]
                         
                         
-                    args_list = [[module,
+                    # args_list = [[module,
+                    #               full_path_to_python_script,
+                    #               current_db["db_function_name"],
+                    #               db_original_file_directory,
+                    #               cell_id,
+                    #               x,
+                    #               db_cell_sweep_file,
+                    #               current_db["stimulus_time_provided"],
+                    #               current_db["db_stimulus_duration"]] for x in current_cell_sweep_list]
+                    
+                    args_list = [module,
                                   full_path_to_python_script,
                                   current_db["db_function_name"],
                                   db_original_file_directory,
                                   cell_id,
-                                  x,
+                                  current_cell_sweep_list,
                                   db_cell_sweep_file,
                                   current_db["stimulus_time_provided"],
-                                  current_db["db_stimulus_duration"]] for x in current_cell_sweep_list]
+                                  current_db["db_stimulus_duration"]]
                     
                     Full_TVC_table, cell_stim_time_table, processing_table = get_db_traces(args_list, nb_of_workers_to_use, processing_table)
                     
@@ -258,19 +286,29 @@ def cell_processing(args_list):
                                            "Sweep QC" : cell_Sweep_QC_table}
                     dict_to_add = {"Sweep analysis":Sweep_analysis_dict}
                     saving_dict.update(dict_to_add)
-                    
+                    saving_dict.update({"Processing report" : processing_table})
                 if "Spike analysis" in analysis_to_perform:
                     current_process = "Spike analysis"
                     processing_table = pd.DataFrame(columns=['Processing_step','Processing_time','Warnings_encontered'])
-                    args_list = [[module,
+                    # args_list = [[module,
+                    #               full_path_to_python_script,
+                    #               current_db["db_function_name"],
+                    #               db_original_file_directory,
+                    #               cell_id,
+                    #               x,
+                    #               db_cell_sweep_file,
+                    #               current_db["stimulus_time_provided"],
+                    #               current_db["db_stimulus_duration"]] for x in current_cell_sweep_list]
+                    
+                    args_list = [module,
                                   full_path_to_python_script,
                                   current_db["db_function_name"],
                                   db_original_file_directory,
                                   cell_id,
-                                  x,
+                                  current_cell_sweep_list,
                                   db_cell_sweep_file,
                                   current_db["stimulus_time_provided"],
-                                  current_db["db_stimulus_duration"]] for x in current_cell_sweep_list]
+                                  current_db["db_stimulus_duration"]]
                     
                     Full_TVC_table, cell_stim_time_table, processing_table = get_db_traces(args_list, nb_of_workers_to_use, processing_table)
                     
@@ -279,7 +317,8 @@ def cell_processing(args_list):
                     is_Processing_report_df = pd.DataFrame()
                     if os.path.exists(saving_file_cell) == True:
                         #_, _, _, _, is_sweep_info_table, is_sweep_QC_table, _, _,is_Processing_report_df = ordifunc.read_cell_file_h5(cell_id, current_db, selection = ['Sweep analysis','Sweep QC','Processing_report'])
-                        cell_dict = ordifunc.read_cell_file_h5(cell_id, current_db, selection = ['Sweep analysis','Sweep QC','Processing_report'])
+                        current_db_df = pd.DataFrame(current_db,index=[0])
+                        cell_dict = ordifunc.read_cell_file_h5(cell_id, current_db_df, selection = ['Sweep analysis','Sweep QC','Processing_report'])
                         is_sweep_info_table = cell_dict["Sweep_info_table"]
                         is_sweep_QC_table = cell_dict['Sweep_QC_table']
                         is_Processing_report_df = cell_dict['Processing_table']
@@ -299,19 +338,29 @@ def cell_processing(args_list):
                     Full_SF_dict, Full_SF_table, processing_table = perform_spike_related_analysis(Full_TVC_table, cell_sweep_info_table, processing_table)
                     
                     saving_dict.update({"Spike analysis" : Full_SF_dict})
-                    
+                    saving_dict.update({"Processing report" : processing_table})
                 if "Firing analysis" in analysis_to_perform:
                     current_process = "Firing analysis"
                     processing_table = pd.DataFrame(columns=['Processing_step','Processing_time','Warnings_encontered'])
-                    args_list = [[module,
+                    # args_list = [[module,
+                    #               full_path_to_python_script,
+                    #               current_db["db_function_name"],
+                    #               db_original_file_directory,
+                    #               cell_id,
+                    #               x,
+                    #               db_cell_sweep_file,
+                    #               current_db["stimulus_time_provided"],
+                    #               current_db["db_stimulus_duration"]] for x in current_cell_sweep_list]
+                    
+                    args_list = [module,
                                   full_path_to_python_script,
                                   current_db["db_function_name"],
                                   db_original_file_directory,
                                   cell_id,
-                                  x,
+                                  current_cell_sweep_list,
                                   db_cell_sweep_file,
                                   current_db["stimulus_time_provided"],
-                                  current_db["db_stimulus_duration"]] for x in current_cell_sweep_list]
+                                  current_db["db_stimulus_duration"]]
                     
                     Full_TVC_table, cell_stim_time_table, processing_table = get_db_traces(args_list, nb_of_workers_to_use, processing_table)
                     
@@ -323,8 +372,9 @@ def cell_processing(args_list):
                     if os.path.exists(saving_file_cell) == True:
     
                         #_, _, is_SF_table, _, is_sweep_info_table, is_sweep_QC_table, _, _,is_Processing_report_df = ordifunc.read_cell_file_h5(cell_id, current_db, selection = ['Sweep analysis','Sweep QC', 'TVC_SF','Processing_report'])
-                        cell_dict = ordifunc.read_cell_file_h5(cell_id, current_db, selection = ['Sweep analysis','Sweep QC', 'TVC_SF','Processing_report'])
-                        is_SF_table = cell_dict['Full_SF_dict_table']
+                        current_db_df = pd.DataFrame(current_db,index=[0])
+                        cell_dict = ordifunc.read_cell_file_h5(cell_id, current_db_df, selection = ['Sweep analysis','Sweep QC', 'TVC_SF','Processing_report'])
+                        is_SF_table = cell_dict['Full_SF_table']
                         is_sweep_info_table = cell_dict["Sweep_info_table"]
                         is_sweep_QC_table = cell_dict['Sweep_QC_table']
                         is_Processing_report_df = cell_dict['Processing_table']
@@ -344,7 +394,7 @@ def cell_processing(args_list):
                         processing_table = is_Processing_report_df
                         Full_SF_table = is_SF_table
                         processing_table = processing_table[processing_table['Processing_step'] != "Firing analysis"]
-    
+
                     cell_feature_table, cell_fit_table, cell_adaptation_table, processing_table = perform_firing_related_analysis(Full_SF_table, cell_sweep_info_table, cell_Sweep_QC_table, processing_table)
                     
                     firing_dict={"Cell_feature" : cell_feature_table,
@@ -352,15 +402,16 @@ def cell_processing(args_list):
                                  "Cell_Adaptation" : cell_adaptation_table}
                     
                     saving_dict.update({"Firing analysis" : firing_dict})
-                    
+                    saving_dict.update({"Processing report" : processing_table})
                 if 'Metadata' in analysis_to_perform:
                     current_process = "Metadata"
+
                     
                     Metadata_dict = db_population_class.loc[db_population_class['Cell_id'] == cell_id,:].iloc[0,:].to_dict()
                     
                     saving_dict.update({"Metadata" : Metadata_dict})
                     
-            saving_dict.update({"Processing report" : processing_table})
+            
     
             ordifunc.write_cell_file_h5(saving_file_cell,
                                saving_dict,
@@ -377,6 +428,7 @@ def cell_processing(args_list):
         # problem_cell.append(str(cell_id))
         message = str('Error in '+str(current_process)+': '+str(error))
         new_line = pd.DataFrame([current_process,'--',message]).T
+
         new_line.columns=processing_table.columns
         processing_table = pd.concat([processing_table,new_line],ignore_index=True,axis=0)
         saving_dict.update({"Processing report" : processing_table})
@@ -413,14 +465,14 @@ def get_db_traces(args_list, nb_of_workers_to_use, processing_table):
         Full_TVC_table = pd.DataFrame(columns=['Sweep','TVC'])
         cell_stim_time_table = pd.DataFrame(columns=['Sweep','Stim_start_s', 'Stim_end_s'])
         
-        for x in args_list:
-            result = sw_an.get_TVC_table(x)
-            Full_TVC_table = pd.concat([
-                Full_TVC_table,result[0]], ignore_index=True)
-            cell_stim_time_table = pd.concat([
-                cell_stim_time_table , result[1]], ignore_index=True)
+        # for x in args_list:
+        #     result = sw_an.get_TVC_table(x)
+        #     Full_TVC_table = pd.concat([
+        #         Full_TVC_table,result[0]], ignore_index=True)
+        #     cell_stim_time_table = pd.concat([
+        #         cell_stim_time_table , result[1]], ignore_index=True)
         
-        
+        Full_TVC_table, cell_stim_time_table = sw_an.get_TVC_table(args_list)
         
         Full_TVC_table.index = Full_TVC_table.loc[:,"Sweep"]
         Full_TVC_table.index = Full_TVC_table.index.astype(str)

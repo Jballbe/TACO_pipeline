@@ -120,10 +120,10 @@ def get_filtered_TVC_table(original_cell_full_TVC_table,sweep,do_filter=True,fil
     
     
     first_derivative=get_derivative(np.array(TVC_table['Membrane_potential_mV']),np.array(TVC_table['Time_s']))
-    first_derivative=np.insert(first_derivative,0,np.nan)
+    #first_derivative=np.insert(first_derivative,0,np.nan)
 
     second_derivative=get_derivative(first_derivative,np.array(TVC_table['Time_s']))
-    second_derivative=np.insert(second_derivative,0,[np.nan,np.nan])
+    #second_derivative=np.insert(second_derivative,0,[np.nan,np.nan])
     
     TVC_table['Potential_first_time_derivative_mV/s'] = first_derivative
     TVC_table["Potential_second_time_derivative_mV/s/s"] = second_derivative
@@ -256,16 +256,17 @@ def get_derivative(value_trace, time_trace):
         Time derivative of the time varying signal trace.
 
     '''
-    
-    dv = np.diff(value_trace)
+    trace_derivative = np.gradient(value_trace, time_trace)
+    trace_derivative *= 1e-3 # in mV/s = mV/ms
+    # dv = np.diff(value_trace)
 
-    dt = np.diff(time_trace)
-    dvdt = 1e-3 * dv / dt # in V/s = mV/ms
+    # dt = np.diff(time_trace)
+    # dvdt = 1e-3 * dv / dt # in mV/s = mV/ms
 
-    # Remove nan values (in case any dt values == 0)
-    dvdt = dvdt[~np.isnan(dvdt)]
+    # # Remove nan values (in case any dt values == 0)
+    # dvdt = dvdt[~np.isnan(dvdt)]
 
-    return dvdt
+    return trace_derivative
 
 def write_cell_file_h5(cell_file_path,
                        saving_dict,
@@ -487,21 +488,22 @@ def write_cell_file_h5(cell_file_path,
                         elt, data=np.array(original_cell_adaptation_table[elt]))
                 
     #store processing report
-    original_processing_table = saving_dict["Processing report"]
-    if 'Processing_report' in file.keys() and overwrite == True:
-        del file["Processing_report"]
-        if isinstance(original_processing_table,pd.DataFrame) == True:
-            processing_report_group = file.create_group('Processing_report')
-            for elt in np.array(original_processing_table.columns):
-                processing_report_group.create_dataset(
-                    elt, data=np.array(original_processing_table[elt]))
-            
-    elif 'Processing_report' not in file.keys():
-        if isinstance(original_processing_table,pd.DataFrame) == True:
-            processing_report_group = file.create_group('Processing_report')
-            for elt in np.array(original_processing_table.columns):
-                processing_report_group.create_dataset(
-                    elt, data=np.array(original_processing_table[elt]))
+    if "Processing report" in saving_dict.keys():
+        original_processing_table = saving_dict["Processing report"]
+        if 'Processing_report' in file.keys() and overwrite == True:
+            del file["Processing_report"]
+            if isinstance(original_processing_table,pd.DataFrame) == True:
+                processing_report_group = file.create_group('Processing_report')
+                for elt in np.array(original_processing_table.columns):
+                    processing_report_group.create_dataset(
+                        elt, data=np.array(original_processing_table[elt]))
+                
+        elif 'Processing_report' not in file.keys():
+            if isinstance(original_processing_table,pd.DataFrame) == True:
+                processing_report_group = file.create_group('Processing_report')
+                for elt in np.array(original_processing_table.columns):
+                    processing_report_group.create_dataset(
+                        elt, data=np.array(original_processing_table[elt]))
            
                 
     
@@ -601,10 +603,13 @@ def estimate_trace_stim_limits(TVC_table_original,stimulus_duration,do_plot=Fals
     
     TVC_table=TVC_table_original.copy()
     
-
+    TVC_table['Input_current_pA']=np.array(filter_trace(TVC_table['Input_current_pA'],
+                                                                        TVC_table['Time_s'],
+                                                                        filter=5,
+                                                                        do_plot=False))
     current_derivative = get_derivative(np.array(TVC_table['Input_current_pA']),
                                         np.array(TVC_table['Time_s']))
-    current_derivative=np.insert(current_derivative,0,np.nan)
+    #current_derivative=np.insert(current_derivative,0,np.nan)
     TVC_table["Filtered_Stimulus_trace_derivative_pA/ms"]=np.array(current_derivative)
     # remove last 50ms of signal (potential step)
     limit = TVC_table.shape[0] - \
@@ -683,7 +688,8 @@ def find_time_index(t, t_0):
     -------
     idx: index of t closest to t_0
     """
-    assert t[0] <= t_0 <= t[-1], "Given time ({:f}) is outside of time range ({:f}, {:f})".format(t_0, t[0], t[-1])
+    #assert t[0] <= t_0 <= t[-1], "Given time ({:f}) is outside of time range ({:f}, {:f})".format(t_0, t[0], t[-1])
+    assert np.nanmin([t[0],t[-1]]) <= t_0 <= np.nanmax([t[0],t[-1]]), "Given time ({:f}) is outside of time range ({:f}, {:f})".format(t_0, t[0], t[-1])
 
     idx = np.argmin(abs(t - t_0))
     return idx
@@ -751,6 +757,7 @@ def read_cell_file_h5(cell_id, config_line, selection=['All']):
         Metadata_dict = {}
         for data in Metadata_group.keys():
             if type(Metadata_group[data][()]) == bytes:
+                print(Metadata_group[data][()])
                 Metadata_dict[data] = Metadata_group[data][()].decode('ascii')
             else:
                 Metadata_dict[data] = Metadata_group[data][()]
@@ -809,7 +816,7 @@ def read_cell_file_h5(cell_id, config_line, selection=['All']):
         SF_group = current_file['Spike analysis']
 
         sweep_list = list(SF_group.keys())
-        
+
         
         #print(config_line)
         if isinstance(config_line,pd.DataFrame) == True:
@@ -840,22 +847,33 @@ def read_cell_file_h5(cell_id, config_line, selection=['All']):
         
         Full_SF_dict_table = pd.DataFrame(columns=['Sweep', 'SF_dict'])
         
-        args_list = [[module,
+        # args_list = [[module,
+        #               full_path_to_python_script,
+        #               config_line["db_function_name"],
+        #               db_original_file_directory,
+        #               cell_id,
+        #               x,
+        #               db_cell_sweep_file,
+        #               config_line["stimulus_time_provided"],
+        #               config_line["db_stimulus_duration"]] for x in sweep_list]
+        
+        args_list = [module,
                       full_path_to_python_script,
                       config_line["db_function_name"],
                       db_original_file_directory,
                       cell_id,
-                      x,
+                      sweep_list,
                       db_cell_sweep_file,
                       config_line["stimulus_time_provided"],
-                      config_line["db_stimulus_duration"]] for x in sweep_list]
+                      config_line["db_stimulus_duration"]]
         
-        Full_TVC_table = pd.DataFrame(columns=['Sweep','TVC'])
+        #Full_TVC_table = pd.DataFrame(columns=['Sweep','TVC'])
         
-        for x in args_list:
-            result = sw_an.get_TVC_table(x)
-            Full_TVC_table = pd.concat([
-                Full_TVC_table,result[0]], ignore_index=True)
+        Full_TVC_table = sw_an.get_TVC_table(args_list)[0]
+        # for x in args_list:
+        #     result = sw_an.get_TVC_table(x)
+        #     Full_TVC_table = pd.concat([
+        #         Full_TVC_table,result[0]], ignore_index=True)
             
         
         
@@ -1021,81 +1039,156 @@ def create_summary_tables(config_json_file_path, saving_path):
 
     '''
     
-    unit_line=pd.DataFrame(['--','--','--','Hz/pA','pA','Hz','pA','Spike_index']).T
-    Full_feature_table=pd.DataFrame(columns=['Cell_id','Obs','I_O_QNRMSE','Gain','Threshold','Saturation_Frequency','Saturation_Stimulus','Adaptation_index','Response_type',"Output_Duration"])
+    unit_line=pd.DataFrame(['--','--','--','Hz/pA','pA','Hz','pA','Hz', "pA"]).T
+    Full_feature_table=pd.DataFrame(columns=['Cell_id','Obs','I_O_NRMSE','Gain','Threshold','Saturation_Frequency','Saturation_Stimulus','Response_Fail_Frequency','Response_Fail_Stimulus','Response_type',"Output_Duration"])
+    
+    unit_fit_line = pd.DataFrame(['--','--','--','--','--','--', "--",'--']).T
+    Full_fit_table=pd.DataFrame(columns=['Cell_id','Obs','Hill_amplitude','Hill_coef', 'Hill_Half_cst','Hill_x0','Sigmoid_x0','Sigmoid_k','Response_type',"Output_Duration"])
 
-    cell_linear_values = pd.DataFrame(columns=['Cell_id','Input_Resistance_GOhms','Input_Resistance_GOhms_SD','Time_constant_ms','Time_constant_ms_SD'])
-    linear_values_unit = pd.DataFrame(['--','GOhms','GOhms','ms','ms']).T
-    linear_values_unit.columns=['Cell_id','Input_Resistance_GOhms','Input_Resistance_GOhms_SD','Time_constant_ms','Time_constant_ms_SD']
+    cell_linear_values = pd.DataFrame(columns=['Cell_id','Input_Resistance_GOhms','Input_Resistance_GOhms_SD','Time_constant_ms','Time_constant_ms_SD', "Resting_potential_mV", 'Resting_potential_mV_SD'])
+    linear_values_unit = pd.DataFrame(['--','GOhms','GOhms','ms','ms','mV','mV']).T
+    linear_values_unit.columns=['Cell_id','Input_Resistance_GOhms','Input_Resistance_GOhms_SD','Time_constant_ms','Time_constant_ms_SD', "Resting_potential_mV", 'Resting_potential_mV_SD']
     cell_linear_values = pd.concat([cell_linear_values,linear_values_unit],ignore_index=True)
     
     processing_time_table = pd.DataFrame(columns=['Cell_id','Processing_step','Processing_time'])
     processing_time_unit_line = pd.DataFrame(['--','--','s']).T
     processing_time_unit_line.columns=processing_time_table.columns
     processing_time_table = pd.concat([processing_time_table,processing_time_unit_line],ignore_index=True)
-    problem_cell=[]
     
+    
+    Adaptation_table = pd.DataFrame(columns = ["Cell_id", "Adaptation_Obs", "Adaptation_Instantaneous_Frequency_Hz",
+                                               'Adaptation_Spike_width_at_half_heigth_s',
+                                               "Adaptation_Spike_heigth_mV", 
+                                               "Adaptation_Threshold_mV",
+                                               'Adaptation_Upstroke_mV/s',
+                                               "Adaptation_Peak_mV", 
+                                               'Adaptation_Downstroke_mV/s',
+                                               "Adaptation_Fast_Trough_mV",
+                                               'Adaptation_fAHP_mV',
+                                               'Adaptation_Trough_mV'])
+    Adaptation_table_unit_line = pd.DataFrame(["--","--","Index","Index","Index","Index","Index","Index","Index","Index","Index","Index"]).T
+    Adaptation_table_unit_line.columns = Adaptation_table.columns
+    Adaptation_table = pd.concat([Adaptation_table, Adaptation_table_unit_line],ignore_index = True)
+    problem_cell=[]
+    problem_df = pd.DataFrame(columns = ['Cell_id','Error_message'])
     config_json_file = open_json_config_file(config_json_file_path)
     Full_population_calss_table = pd.DataFrame()
     for line in config_json_file.index:
         current_db_population_class_table = pd.read_csv(config_json_file.loc[line,'db_population_class_file'])
-        Full_population_calss_table= pd.concat([Full_population_calss_table,current_db_population_class_table])
+        Full_population_calss_table= pd.concat([Full_population_calss_table,current_db_population_class_table],ignore_index = True)
     Full_population_calss_table=Full_population_calss_table.astype({'Cell_id':'str'})
     cell_id_list = Full_population_calss_table.loc[:,'Cell_id'].unique()
     for cell_id in tqdm.tqdm(cell_id_list):
         try:
             current_DB = Full_population_calss_table.loc[Full_population_calss_table['Cell_id']==cell_id,'Database'].values[0]
             config_line = config_json_file.loc[config_json_file['database_name']==current_DB,:]
-            cell_dict = read_cell_file_h5(str(cell_id),config_line,['Sweep analysis','Firing analysis','Processing_report'])
+            cell_dict = read_cell_file_h5(str(cell_id),config_line,['Sweep analysis','Firing analysis','Processing_report', "Sweep QC"])
             sweep_info_table = cell_dict['Sweep_info_table']
             cell_fit_table = cell_dict['Cell_fit_table']
             cell_feature_table = cell_dict['Cell_feature_table']
             Processing_df = cell_dict['Processing_table']
-            #Full_TVC_table, Full_SF_dict_table, Full_SF_table, Metadata_table, sweep_info_table, Sweep_QC_table, cell_fit_table, cell_feature_table,Processing_df = read_cell_file_h5(str(cell_id),config_line,['Sweep analysis','Firing analysis','Processing_report'])
+            cell_adaptation_table = cell_dict['Cell_Adaptation']
+            sweep_QC_table = cell_dict['Sweep_QC_table']
+            sweep_info_QC_table = pd.merge(sweep_info_table, sweep_QC_table.loc[:,['Passed_QC', "Sweep"]], on = "Sweep")
+            sub_sweep_info_QC_table = sweep_info_QC_table.loc[sweep_info_QC_table['Passed_QC'] == True,:]
+            
+            sub_sweep_info_QC_table_SS_potential = sub_sweep_info_QC_table.dropna(subset=['SS_potential_mV'])
+            SS_potential_mV_list = list(sub_sweep_info_QC_table_SS_potential.loc[:,'SS_potential_mV'])
+            Stim_amp_pA_list = list(sub_sweep_info_QC_table_SS_potential.loc[:,'Stim_SS_pA'])
+            
+            IR_regression_fit = fir_an.linear_fit(Stim_amp_pA_list, SS_potential_mV_list)[0]
+            
     
-            IR_mean = np.nanmean(sweep_info_table['Input_Resistance_GOhms'])
-            IR_SD = np.nanstd(sweep_info_table['Input_Resistance_GOhms'])
+            #IR_mean = np.nanmean(sub_sweep_info_QC_table['Input_Resistance_GOhms'])
+            IR_SD = np.nanstd(sub_sweep_info_QC_table['Input_Resistance_GOhms'])
             
-            Time_cst_mean = np.nanmean(sweep_info_table['Time_constant_ms'])
-            Time_cst_SD = np.nanstd(sweep_info_table['Time_constant_ms'])
+            Time_cst_mean = np.nanmean(sub_sweep_info_QC_table['Time_constant_ms'])
+            Time_cst_SD = np.nanstd(sub_sweep_info_QC_table['Time_constant_ms'])
             
-            cell_linear_values_line = pd.DataFrame([str(cell_id),IR_mean,IR_SD,Time_cst_mean,Time_cst_SD]).T
-            cell_linear_values_line.columns = ['Cell_id','Input_Resistance_GOhms','Input_Resistance_GOhms_SD','Time_constant_ms','Time_constant_ms_SD']
+            sub_sweep_info_QC_table_Holding_potential = sub_sweep_info_QC_table.dropna(subset=['Holding_potential_mV'])
+            Holding_potential_mV = list(sub_sweep_info_QC_table_Holding_potential.loc[:,'Holding_potential_mV'])
+            Holding_current_list = list(sub_sweep_info_QC_table_Holding_potential.loc[:,'Holding_current_pA'])
+            Resting_potential_regression_fit = fir_an.linear_fit(Holding_current_list, Holding_potential_mV)[1]
+            
+            
+            #Resting_potential_mean = np.nanmean(sub_sweep_info_QC_table['Resting_potential_mV'])
+            Resting_potential_SD = np.nanstd(sub_sweep_info_QC_table['Resting_potential_mV'])
+            
+            cell_linear_values_line = pd.DataFrame([str(cell_id),IR_regression_fit,IR_SD,Time_cst_mean,Time_cst_SD,Resting_potential_regression_fit, Resting_potential_SD ]).T
+            cell_linear_values_line.columns = ['Cell_id','Input_Resistance_GOhms','Input_Resistance_GOhms_SD','Time_constant_ms','Time_constant_ms_SD', "Resting_potential_mV", 'Resting_potential_mV_SD']
             cell_linear_values=pd.concat([cell_linear_values,cell_linear_values_line],ignore_index=True)
             
             response_duration_dictionnary={
                 'Time_based':[.005, .010, .025, .050, .100, .250, .500],
                 'Index_based':list(np.arange(2,18)),
                 'Interval_based':list(np.arange(1,17))}
-            
+
             if cell_fit_table.shape[0]==1:
+
                 for response_type in response_duration_dictionnary.keys():
                     output_duration_list=response_duration_dictionnary[response_type]
                     for output_duration in output_duration_list:
                         I_O_obs=cell_fit_table.loc[(cell_fit_table['Response_type']==response_type )& (cell_fit_table['Output_Duration']==output_duration),"I_O_obs"]
                         if len(I_O_obs)!=0:
-                            Gain,Threshold,Saturation_Frequency,Saturation_Stimulus,Adaptation_index = np.array(cell_feature_table.loc[(cell_fit_table['Response_type']==response_type )&
-                                                                                                                                       (cell_fit_table['Output_Duration']==output_duration),
-                                                                                                                                ["Gain","Threshold","Saturation_Frequency","Saturation_Stimulus","Adaptation_index"]]).tolist()[0]
+                            Gain,Threshold,Saturation_Frequency,Saturation_Stimulus,Response_Failure_Frequency,Response_Failure_Stimulus = np.array(cell_feature_table.loc[(cell_feature_table['Response_type']==response_type )&
+                                                                                                                                       (cell_feature_table['Output_Duration']==output_duration),
+                                                                                                                                ["Gain","Threshold","Saturation_Frequency","Saturation_Stimulus","Response_Fail_Frequency", "Response_Fail_Stimulus"]]).tolist()[0]
                             I_O_obs=I_O_obs.tolist()[0]
+                            
+                            Hill_Half_cst, Hill_amplitude, Hill_coef, Hill_x0, Output_Duration, Response_type, Sigmoid_k,Sigmoid_x0 = np.array(cell_fit_table.loc[(cell_fit_table['Response_type']==response_type )&
+                                                                                                                                       (cell_fit_table['Output_Duration']==output_duration),
+                                                                                                                                ["Hill_Half_cst", "Hill_amplitude", "Hill_coef", "Hill_x0", "Output_Duration", "Response_type", "Sigmoid_k","Sigmoid_x0"]]).tolist()[0]
                         else:
                             I_O_obs="No_I_O_Adapt_computed"
-                            empty_array = np.empty(5)
+                            empty_array = np.empty(6)
                             empty_array[:] = np.nan
-                            Gain,Threshold,Saturation_Frequency,Saturation_Stimulus,Adaptation_index = empty_array
+                            Gain,Threshold,Saturation_Frequency,Saturation_Stimulus,Response_Failure_Frequency,Response_Failure_Stimulus = empty_array
+                            
+                            empty_array = np.empty(8)
+                            empty_array[:] = np.nan
+                            Hill_Half_cst, Hill_amplitude, Hill_coef, Hill_x0, Output_Duration, Response_type, Sigmoid_k,Sigmoid_x0 = empty_array
                         
-                        new_line=pd.DataFrame([str(cell_id),I_O_obs,Gain,Threshold,Saturation_Frequency,Saturation_Stimulus,Adaptation_index,response_type,output_duration]).T
+                            
+                        
+                        new_line=pd.DataFrame([str(cell_id),I_O_obs,Gain,Threshold,Saturation_Frequency,Saturation_Stimulus,response_type,output_duration]).T
                         new_line.columns=Full_feature_table.columns
                         Full_feature_table = pd.concat([Full_feature_table,new_line],ignore_index=True)
+                        
+                        new_fit_line = pd.DataFrame([str(cell_id),I_O_obs,Hill_amplitude, Hill_coef, Hill_Half_cst, Hill_x0, Sigmoid_x0, Sigmoid_k, response_type, output_duration]).T
+                        new_fit_line.columns = Full_fit_table.columns
+                        Full_fit_table = pd.concat([Full_fit_table, new_fit_line], ignore_table = True)
+                        
+                        
             else:
+                
                 cell_feature_table = cell_feature_table.merge(
-            cell_fit_table.loc[:,['I_O_obs','Response_type','Output_Duration','I_O_QNRMSE']], how='inner', on=['Response_type','Output_Duration'])
+            cell_fit_table.loc[:,['I_O_obs','Response_type','Output_Duration','I_O_NRMSE']], how='inner', on=['Response_type','Output_Duration'])
     
                 cell_feature_table['Cell_id']=str(cell_id)
                 cell_feature_table=cell_feature_table.rename(columns={"I_O_obs": "Obs"})
                 cell_feature_table=cell_feature_table.reindex(columns=Full_feature_table.columns)
                 Full_feature_table = pd.concat([Full_feature_table,cell_feature_table],ignore_index=True)
+                
+                cell_fit_table['Cell_id'] = str(cell_id)
+                cell_fit_table=cell_fit_table.rename(columns={"I_O_obs": "Obs"})
+                cell_fit_table=cell_fit_table.reindex(columns=Full_fit_table.columns)
+                Full_fit_table = pd.concat([Full_fit_table, cell_fit_table], ignore_index = True)
+                
             
+            cell_adaptation_table_copy = cell_adaptation_table.copy()
+            cell_adaptation_table_copy['Feature'] = cell_adaptation_table_copy.apply(lambda row: append_last_measure(row['Feature'], row['Measure']), axis=1)
+            feature_dict = cell_adaptation_table_copy.set_index('Feature')['Adaptation_Index'].to_dict()
+            
+            result_df = pd.DataFrame([feature_dict])
+            result_df = result_df.add_prefix('Adaptation_')
+            result_df.loc[:,'Cell_id']=cell_id
+            result_df.loc[:,'Obs']="--"
+            result_df = result_df.rename(columns={'Adaptation_Instantaneous_Frequency_mV':"Adaptation_Instantaneous_Frequency_Hz", 
+                                                  "Obs":"Adaptation_Obs"})
+
+            Adaptation_table = pd.concat([Adaptation_table, result_df], ignore_index=True)
+            
+
             for step in Processing_df.loc[:,'Processing_step'].unique():
                 sub_processing_table = Processing_df.loc[Processing_df['Processing_step']==step,:]
                 sub_processing_table=sub_processing_table.reset_index()
@@ -1106,13 +1199,27 @@ def create_summary_tables(config_json_file_path, saving_path):
                 new_line.columns = processing_time_table.columns
                 processing_time_table=pd.concat([processing_time_table,new_line],ignore_index=True,axis=0)
         except:
-            problem_cell.append(cell_id)
+
+            try:
+                cell_dict = read_cell_file_h5(str(cell_id),config_line,['Processing_report'])
+                
+                Processing_df = cell_dict['Processing_table']
+                for elt in Processing_df.index:
+                    if "Error" in Processing_df.loc[elt,'Warnings_encontered'] :
+                        new_line = pd.DataFrame([cell_id, Processing_df.loc[elt,'Warnings_encontered']]).T
+                        new_line.columns = problem_df.columns
+                        problem_df = pd.concat([problem_df, new_line], ignore_index=True)
+                        break
+            except:
+
+                problem_cell.append(cell_id)
+                
             
     for response_type in response_duration_dictionnary.keys():
         output_duration_list=response_duration_dictionnary[response_type]
         for output_duration in output_duration_list:
             
-            new_table = pd.DataFrame(columns=['Cell_id','Obs','I_O_QNRMSE','Gain','Threshold','Saturation_Frequency','Saturation_Stimulus','Adaptation_index'])
+            new_table = pd.DataFrame(columns=['Cell_id','Obs','I_O_NRMSE','Gain','Threshold','Saturation_Frequency','Saturation_Stimulus','Response_Fail_Frequency','Response_Fail_Stimulus',])
             unit_line.columns=new_table.columns
             new_table = pd.concat([new_table,unit_line],ignore_index=True)
             
@@ -1126,16 +1233,50 @@ def create_summary_tables(config_json_file_path, saving_path):
                 return str('problem with table'+str(response_type)+'_'+str(output_duration))
             
             
+            
+            new_fit_table = pd.DataFrame(columns = ['Cell_id','Obs','Hill_amplitude','Hill_coef', 'Hill_Half_cst','Hill_x0','Sigmoid_x0','Sigmoid_k'])
+            unit_fit_line.columns = new_fit_table.columns
+            new_fit_table = pd.concat([new_fit_table, unit_fit_line], ignore_index = True)
+            
+            sub_fit_table = Full_fit_table.loc[(Full_fit_table['Response_type']==response_type)&(Full_fit_table['Output_Duration']==output_duration),]
+            sub_fit_table = sub_fit_table.drop(['Response_type','Output_Duration'], axis=1)
+            sub_fit_table = sub_fit_table.reindex(columns=new_fit_table.columns)
+            new_fit_table = pd.concat([new_fit_table,sub_fit_table],ignore_index=True)
+            
+            
             if response_type == 'Time_based':
                 output_duration*=1000
                 output_duration=str(str(int(output_duration))+'ms')
-                
             
-            new_table.to_csv(str(saving_path+str(response_type+'_'+str(output_duration))+'.csv'))
+            #new_table.to_csv(str(saving_path+str(response_type+'_'+str(output_duration))+'.csv'))
+            new_table.to_csv(f"{saving_path}Full_Feature_Table_{response_type}_{output_duration}.csv")
+            
+            
+            if len(new_fit_table['Cell_id'].unique())!=new_fit_table.shape[0]:
+                return str('problem with table'+str(response_type)+'_'+str(output_duration))
+            
+            new_fit_table.to_csv(f"{saving_path}Full_Fit_Table_{response_type}_{output_duration}.csv")
+            
+            
+            
+            
+            
+            
+            
     cell_linear_values.to_csv(str(saving_path+ 'Full_Cell_linear_values.csv')) 
+    
     processing_time_table.to_csv(str(saving_path+'Full_Processing_Times.csv'))
-    return problem_cell    
+    Adaptation_table.to_csv(f'{saving_path}Full_Adaptation_Table_Time_based_500ms.csv')
+    problem_df.to_csv(f'{saving_path}Problem_report.csv')
+    for col in Full_population_calss_table.columns:
+        if "Unnamed" in col:
+            Full_population_calss_table = Full_population_calss_table.drop(columns=[col])
+    Full_population_calss_table.to_csv(f'{saving_path}Full_Population_Class.csv')
+    return problem_df, problem_cell
 
+def append_last_measure(feature, measure):
+    last_element = measure.split('_')[-1]
+    return f"{feature}_{last_element}"
 
 def gather_all_features_table(folder):
     
@@ -1223,9 +1364,113 @@ def summarize_features_evolution(Full_I_O_features_table):
     
     cell_features_slope_int_table_with_cell_ids=pd.concat([unit_line,cell_features_slope_int_table_with_cell_ids],axis=0,ignore_index=True)
     return cell_features_slope_int_table_with_cell_ids
+
+import plotly.express as px
+
+
+def plot_sunburst_pop_class_table(Full_population_class_table, saving_path):
+    Full_population_class_table_copy = Full_population_class_table.copy()
+    
+    color_dict = {'Allen_Cell_Type_Database':"#027510",
+                  "Lantyer_Database" : "#02ad19",
+                  "NVC_Database" : "#02de20",
+                  "Scala_2019_DB" : "#50d462",
+                  "Scala_2021" : "#399946",
+                  "Harisson_Database" : "#79f78a",
+                  "Room Temperature" : "#635cf7",
+                  "25 C" : "#837dfa",
+                  "32 C" : "#fc9338",
+                  "34 C" : "#d17626",
+                  "Physiological temperature" : "#f0a767",
+                  "VIS" : "#0249a6",
+                  "SS" : "#2b5894",
+                  "MO" : "#657e9e",
+                  "AUD" : "#768291",
+                  "TE" : "#768291",
+                  "RSP":"#768291",
+                  "1" : "#038c9e",
+                  "2/3" : "#02a2b8",
+                  "4" : "#02bad4",
+                  "5" :'#44c2d4',
+                  "6" : "#6fc4d1",
+                  "Excitatory": "#02a866",
+                  "PValb" : "#ad4102",
+
+                  "Sst" : "#e35502",
+                  "Htr3a" : "#d9804c",
+                  "Vip":"#f76240",
+
+                  "NPY":"#bf452a",
+                  "--" :"#ffffff",
+                  "Unknown" : "#ffffff"}
     
     
+    fig = px.sunburst(
+        Full_population_class_table,
+        path=['Database', "Recording_Temperature", 'General_area','Layer_second','Cell_type'],
+        
+        )
+    # Update the text to hide labels with value "--"
+    labels = fig.data[0].labels
+    custom_labels = [label if label != "--" else "" for label in labels]
+
+    fig.update_traces(
+    textinfo="label+value",
+    #insidetextorientation='horizontal'
+    )
     
+
+    fig.update_traces(marker_colors=[color_dict[cat] for cat in fig.data[-1].labels])
+    fig.write_image(saving_path, format='pdf',width=1300, height=900)
+    fig.show()
+    
+def gather_BE_per_cell(config_json_file):
+    
+    BE_table = pd.DataFrame(columns = ['Cell_id', 'Database', "Sweep", "Bridge_Error_GOhms", "Bridge_Error_extrapolated"])
+    BE_table_list = []
+    BE_table_list.append(BE_table)
+    for database in config_json_file.loc[:,'database_name'].unique():
+        database_cell_pop_table_file = config_json_file.loc[config_json_file['database_name']==database,"db_population_class_file"].values[0]
+        database_config_line = config_json_file.loc[config_json_file['database_name']==database,:]
+        database_cell_pop_table = pd.read_csv(database_cell_pop_table_file)
+        for cell_id in tqdm.tqdm(database_cell_pop_table.loc[:,'Cell_id'].unique(),desc=f"Processing Database {database}"):
+            cell_dict = read_cell_file_h5(cell_id,database_config_line,selection=['Sweep analysis'])
+            sweep_info_table = cell_dict['Sweep_info_table']
+            
+            try:
+                sub_sweep_info_table = sweep_info_table.loc[sweep_info_table['Bridge_Error_extrapolated']==False,["Sweep", "Bridge_Error_GOhms", "Bridge_Error_extrapolated"]].copy()
+                sub_sweep_info_table.loc[:,"Database"] = database
+                sub_sweep_info_table.loc[:,"Cell_id"] = str(cell_id)
+                
+            except:
+                sub_sweep_info_table = pd.DataFrame([cell_id, database, "--",np.nan,True]).T
+                sub_sweep_info_table.columns = ['Cell_id', 'Database', "Sweep", "Bridge_Error_GOhms", "Bridge_Error_extrapolated"]
+            BE_table_list.append(sub_sweep_info_table)
+            
+    BE_table = pd.concat(BE_table_list, ignore_index=True)
+    
+    return BE_table
+            
+            
+    
+def compare_lists(list1, list2):
+    # 1. Print the length of both lists
+    print(f"Length of first list: {len(list1)}")
+    print(f"Length of second list: {len(list2)}")
+    
+    # 2. Elements in both lists (intersection)
+    common_elements = set(list1) & set(list2)
+    print(f"Elements in both lists: {common_elements}")
+    
+    # 3. Elements in the first list but not in the second (difference)
+    in_first_not_in_second = set(list1) - set(list2)
+    print(f"Elements in the first list but not in the second: {in_first_not_in_second}")
+    
+    # 4. Elements in the second list but not in the first (difference)
+    in_second_not_in_first = set(list2) - set(list1)
+    print(f"Elements in the second list but not in the first: {in_second_not_in_first}")
+
+
     
     
     
