@@ -18,11 +18,30 @@ import Sweep_analysis as sw_an
 import Spike_analysis as sp_an
 import Firing_analysis as fir_an
 import traceback
+import plotly.graph_objects as go
+import plotly.express as px
+import concurrent.futures
+
 
 def get_upstroke_dowstroke_and_intervals(args_list):
+    """
+    This function detect the fist sweep with at least 5 spikes and gather the first spike upstroke and downstroke derivatives
+    as well as the first sweep with at least 10 spikes and gather the first and 10th ISI
+
+    Parameters
+    ----------
+    args_list : List
+        list containting cell_id and config_line to open cell file.
+
+    Returns
+    -------
+    new_line : pd.DataFrame
+        
+
+    """
     cell_id,config_line = args_list
     try:
-        #Full_TVC_table, Full_SF_dict_table, Full_SF_table, Metadata_table, sweep_info_table, Sweep_QC_table, cell_fit_table, cell_feature_table,Processing_df = read_cell_file_h5(str(cell_id),config_line,["All"])
+        
         cell_dict = read_cell_file_h5(str(cell_id),config_line,["All"])
         Full_SF_table = cell_dict['Full_SF_table']
         sweep_info_table = cell_dict['Sweep_info_table']
@@ -120,10 +139,10 @@ def get_filtered_TVC_table(original_cell_full_TVC_table,sweep,do_filter=True,fil
     
     
     first_derivative=get_derivative(np.array(TVC_table['Membrane_potential_mV']),np.array(TVC_table['Time_s']))
-    #first_derivative=np.insert(first_derivative,0,np.nan)
+
 
     second_derivative=get_derivative(first_derivative,np.array(TVC_table['Time_s']))
-    #second_derivative=np.insert(second_derivative,0,[np.nan,np.nan])
+
     
     TVC_table['Potential_first_time_derivative_mV/s'] = first_derivative
     TVC_table["Potential_second_time_derivative_mV/s/s"] = second_derivative
@@ -146,6 +165,46 @@ def get_filtered_TVC_table(original_cell_full_TVC_table,sweep,do_filter=True,fil
     return TVC_table
 
 def subsample_TVC_table(original_TVC_table, subsampling_freq):
+    """
+    Subsamples a time-varying signal table (TVC table) to a specified frequency.
+
+    This function reduces the sampling frequency of the provided time-varying 
+    signal table by selecting every nth row based on the subsampling factor 
+    determined by the original and target frequencies. If the original sampling 
+    frequency is less than or equal to the target frequency, no subsampling is performed.
+
+    Parameters
+    ----------
+    original_TVC_table : pandas.DataFrame
+        A DataFrame containing the original time-varying signal data. 
+        Must include a 'Time_s' column representing time in seconds.
+    subsampling_freq : int
+        The desired subsampling frequency in Hz.
+
+    Returns
+    -------
+    subsampled_TVC_table : pandas.DataFrame
+        A new DataFrame containing the subsampled data. If no subsampling is 
+        performed, the function returns the original table.
+
+    Notes
+    -----
+    - The original sampling frequency is computed as the reciprocal of the time 
+      step (`delta_t`) between consecutive rows in the 'Time_s' column.
+    - If the original sampling frequency is less than or equal to the target frequency, 
+      the function returns the original table without changes and prints a message.
+    - If the original sampling frequency is not an integer multiple of the target frequency, 
+      the function performs approximate subsampling and informs the user of the resulting 
+      actual frequency.
+    - The function resets the index of the resulting subsampled DataFrame to maintain consistency.
+
+    Warnings
+    --------
+    - If the original sampling frequency divided by the target frequency is not an integer, 
+      the actual resulting frequency may differ slightly from the requested subsampling frequency.
+
+
+    """
     subsampled_TVC_table = original_TVC_table.copy()
     time_trace = subsampled_TVC_table.loc[:,'Time_s']
     delta_t = time_trace[1] - time_trace[0]
@@ -231,7 +290,7 @@ def filter_trace(value_trace, time_trace, filter=5., filter_order = 2, zero_phas
         signal_df ['Trace']='Original_Trace'
         filtered_df ['Trace']='Filtered_Trace'
         
-        #signal_df=signal_df.append(filtered_df,ignore_index=True)
+
         signal_df = pd.concat([signal_df, filtered_df], ignore_index = True)
         filter_plot = p9.ggplot(signal_df, p9.aes(x='Time_s',y='Values',color='Trace',group='Trace'))+p9.geom_line()+p9.xlim(2.1,2.4)
         print(filter_plot)
@@ -258,13 +317,7 @@ def get_derivative(value_trace, time_trace):
     '''
     trace_derivative = np.gradient(value_trace, time_trace)
     trace_derivative *= 1e-3 # in mV/s = mV/ms
-    # dv = np.diff(value_trace)
-
-    # dt = np.diff(time_trace)
-    # dvdt = 1e-3 * dv / dt # in mV/s = mV/ms
-
-    # # Remove nan values (in case any dt values == 0)
-    # dvdt = dvdt[~np.isnan(dvdt)]
+    
 
     return trace_derivative
 
@@ -609,7 +662,7 @@ def estimate_trace_stim_limits(TVC_table_original,stimulus_duration,do_plot=Fals
                                                                         do_plot=False))
     current_derivative = get_derivative(np.array(TVC_table['Input_current_pA']),
                                         np.array(TVC_table['Time_s']))
-    #current_derivative=np.insert(current_derivative,0,np.nan)
+
     TVC_table["Filtered_Stimulus_trace_derivative_pA/ms"]=np.array(current_derivative)
     # remove last 50ms of signal (potential step)
     limit = TVC_table.shape[0] - \
@@ -688,7 +741,7 @@ def find_time_index(t, t_0):
     -------
     idx: index of t closest to t_0
     """
-    #assert t[0] <= t_0 <= t[-1], "Given time ({:f}) is outside of time range ({:f}, {:f})".format(t_0, t[0], t[-1])
+
     assert np.nanmin([t[0],t[-1]]) <= t_0 <= np.nanmax([t[0],t[-1]]), "Given time ({:f}) is outside of time range ({:f}, {:f})".format(t_0, t[0], t[-1])
 
     idx = np.argmin(abs(t - t_0))
@@ -784,16 +837,7 @@ def read_cell_file_h5(cell_id, config_line, selection=['All']):
     if 'All' in selection:
         selection = ['TVC_SF', 'Sweep analysis','Sweep QC', 'Metadata', 'Firing analysis','Processing_report']
     
-    # sub1 = "Cell_"
-    # sub2 = ".h5"
-
-    # # getting index of substrings
-    # idx1 = cell_file.index(sub1)
-    # idx2 = cell_file.index(sub2)
- 
-    # # length of substring 1 is added to
-    # # get string from next character
-    # cell_id = cell_file[idx1 + len(sub1) : idx2]
+    
     
     if 'Metadata' in selection and 'Metadata' in current_file.keys():
         ## Metadata ##
@@ -818,20 +862,19 @@ def read_cell_file_h5(cell_id, config_line, selection=['All']):
         sweep_list = list(SF_group.keys())
 
         
-        #print(config_line)
+        
         if isinstance(config_line,pd.DataFrame) == True:
             config_line = config_line.reset_index()
             config_line = config_line.to_dict('index')
             config_line = config_line[0]
-        #print(config_line)    
+
         path_to_python_folder = config_line['path_to_db_script_folder']
         python_file = config_line['python_file_name']
         module=python_file.replace('.py',"")
         full_path_to_python_script=str(path_to_python_folder+python_file)
-        # print(module)
-        # print(full_path_to_python_script)
+     
         spec=importlib.util.spec_from_file_location(module,full_path_to_python_script)
-        #print(spec)
+
         DB_module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(DB_module)
         
@@ -847,15 +890,6 @@ def read_cell_file_h5(cell_id, config_line, selection=['All']):
         
         Full_SF_dict_table = pd.DataFrame(columns=['Sweep', 'SF_dict'])
         
-        # args_list = [[module,
-        #               full_path_to_python_script,
-        #               config_line["db_function_name"],
-        #               db_original_file_directory,
-        #               cell_id,
-        #               x,
-        #               db_cell_sweep_file,
-        #               config_line["stimulus_time_provided"],
-        #               config_line["db_stimulus_duration"]] for x in sweep_list]
         
         args_list = [module,
                       full_path_to_python_script,
@@ -867,15 +901,9 @@ def read_cell_file_h5(cell_id, config_line, selection=['All']):
                       config_line["stimulus_time_provided"],
                       config_line["db_stimulus_duration"]]
         
-        #Full_TVC_table = pd.DataFrame(columns=['Sweep','TVC'])
+        
         
         Full_TVC_table = sw_an.get_TVC_table(args_list)[0]
-        # for x in args_list:
-        #     result = sw_an.get_TVC_table(x)
-        #     Full_TVC_table = pd.concat([
-        #         Full_TVC_table,result[0]], ignore_index=True)
-            
-        
         
             
         for current_sweep in sweep_list:
@@ -1015,7 +1043,89 @@ def read_cell_file_h5(cell_id, config_line, selection=['All']):
     cell_dict['Cell_Adaptation'] = cell_adaptation_table
     cell_dict['Processing_table'] = Processing_report_df
     return cell_dict
-    #return Full_TVC_table, Full_SF_dict_table, Full_SF_table, Metadata_table, sweep_info_table, Sweep_QC_table, cell_fit_table, cell_feature_table,Processing_report_df
+    
+
+def compute_cell_input_resistance(cell_dict):
+    '''
+    Define the method to compute the cell's input resistance from sweep-based measurements
+    Cell's input Resistance is defined as the slope of the linear fit of stimulus steady state and potential steady state during stimulus, for all swepp which validated quality criteria
+
+    Parameters
+    ----------
+    cell_dict 
+    
+    Returns
+    -------
+    IR_regression_fit : list of float
+        [slope, intercept].
+
+    '''
+    
+    sweep_info_table = cell_dict['Sweep_info_table']
+    sweep_QC_table = cell_dict['Sweep_QC_table']
+    sweep_info_QC_table = pd.merge(sweep_info_table, sweep_QC_table.loc[:,['Passed_QC', "Sweep"]], on = "Sweep")
+    sub_sweep_info_QC_table = sweep_info_QC_table.loc[sweep_info_QC_table['Passed_QC'] == True,:]
+    sub_sweep_info_QC_table['Protocol_id'] =  sub_sweep_info_QC_table['Protocol_id'].astype(str)
+    
+    sub_sweep_info_QC_table_SS_potential = sub_sweep_info_QC_table.dropna(subset=['SS_potential_mV'])
+    SS_potential_mV_list = list(sub_sweep_info_QC_table_SS_potential.loc[:,'SS_potential_mV'])
+    Stim_amp_pA_list = list(sub_sweep_info_QC_table_SS_potential.loc[:,'Stim_SS_pA'])
+    
+    IR_regression_fit = fir_an.linear_fit(Stim_amp_pA_list, SS_potential_mV_list)
+    
+    return IR_regression_fit
+
+def compute_cell_time_constant(cell_dict):
+    '''
+    Define the method to compute the cell's time constant  from sweep-based measurements
+    Cell's time constant is defined as the mean of sweep-based time constant of sweeps which validated the quality criteria analysis 
+
+    Parameters
+    ----------
+    cell_dict 
+    
+    Returns
+    -------
+    Time_cst_mean, Time_cst_SD : floats
+        Mean time constant and standard deviation of sweep based time constants
+
+    '''
+    sweep_info_table = cell_dict['Sweep_info_table']
+    sweep_QC_table = cell_dict['Sweep_QC_table']
+    sweep_info_QC_table = pd.merge(sweep_info_table, sweep_QC_table.loc[:,['Passed_QC', "Sweep"]], on = "Sweep")
+    sub_sweep_info_QC_table = sweep_info_QC_table.loc[sweep_info_QC_table['Passed_QC'] == True,:]
+    sub_sweep_info_QC_table['Protocol_id'] =  sub_sweep_info_QC_table['Protocol_id'].astype(str)
+    Time_cst_mean = np.nanmean(sub_sweep_info_QC_table['Time_constant_ms'])
+    Time_cst_SD = np.nanstd(sub_sweep_info_QC_table['Time_constant_ms'])
+    
+    return Time_cst_mean, Time_cst_SD
+    
+def compute_cell_resting_potential(cell_dict):
+    '''
+    Define the method to compute the cell's Resting potential  from sweep-based measurements
+    Cell's Resting potential is defined as the mean of sweep-based Resting potential of sweeps which validated the quality criteria analysis 
+
+    Parameters
+    ----------
+    cell_dict 
+    
+    Returns
+    -------
+    Time_cst_mean, Time_cst_SD : floats
+        Mean time constant and standard deviation of sweep based time constants
+
+    '''
+    sweep_info_table = cell_dict['Sweep_info_table']
+    sweep_QC_table = cell_dict['Sweep_QC_table']
+    sweep_info_QC_table = pd.merge(sweep_info_table, sweep_QC_table.loc[:,['Passed_QC', "Sweep"]], on = "Sweep")
+    sub_sweep_info_QC_table = sweep_info_QC_table.loc[sweep_info_QC_table['Passed_QC'] == True,:]
+    sub_sweep_info_QC_table['Protocol_id'] =  sub_sweep_info_QC_table['Protocol_id'].astype(str)
+    Resting_potential_mean = np.nanmean(sub_sweep_info_QC_table['Resting_potential_mV'])
+    Resting_potential_SD = np.nanstd(sub_sweep_info_QC_table['Resting_potential_mV'])
+    
+    return Resting_potential_mean, Resting_potential_SD
+    
+    
 
 def create_summary_tables(config_json_file_path, saving_path):
     '''
@@ -1091,30 +1201,30 @@ def create_summary_tables(config_json_file_path, saving_path):
             sweep_QC_table = cell_dict['Sweep_QC_table']
             sweep_info_QC_table = pd.merge(sweep_info_table, sweep_QC_table.loc[:,['Passed_QC', "Sweep"]], on = "Sweep")
             sub_sweep_info_QC_table = sweep_info_QC_table.loc[sweep_info_QC_table['Passed_QC'] == True,:]
+            sub_sweep_info_QC_table['Protocol_id'] =  sub_sweep_info_QC_table['Protocol_id'].astype(str)
             
             sub_sweep_info_QC_table_SS_potential = sub_sweep_info_QC_table.dropna(subset=['SS_potential_mV'])
             SS_potential_mV_list = list(sub_sweep_info_QC_table_SS_potential.loc[:,'SS_potential_mV'])
             Stim_amp_pA_list = list(sub_sweep_info_QC_table_SS_potential.loc[:,'Stim_SS_pA'])
             
-            IR_regression_fit = fir_an.linear_fit(Stim_amp_pA_list, SS_potential_mV_list)[0]
+
+            IR_regression_fit = compute_cell_input_resistance(cell_dict)
+            Cell_IR = IR_regression_fit[0]
             
-    
-            #IR_mean = np.nanmean(sub_sweep_info_QC_table['Input_Resistance_GOhms'])
+
             IR_SD = np.nanstd(sub_sweep_info_QC_table['Input_Resistance_GOhms'])
-            
-            Time_cst_mean = np.nanmean(sub_sweep_info_QC_table['Time_constant_ms'])
-            Time_cst_SD = np.nanstd(sub_sweep_info_QC_table['Time_constant_ms'])
-            
-            sub_sweep_info_QC_table_Holding_potential = sub_sweep_info_QC_table.dropna(subset=['Holding_potential_mV'])
-            Holding_potential_mV = list(sub_sweep_info_QC_table_Holding_potential.loc[:,'Holding_potential_mV'])
-            Holding_current_list = list(sub_sweep_info_QC_table_Holding_potential.loc[:,'Holding_current_pA'])
-            Resting_potential_regression_fit = fir_an.linear_fit(Holding_current_list, Holding_potential_mV)[1]
+            if Cell_IR <=0:
+                Cell_IR = np.nan
+                IR_SD = np.nan
+           
+            Time_cst_mean, Time_cst_SD = compute_cell_time_constant(cell_dict)
             
             
-            #Resting_potential_mean = np.nanmean(sub_sweep_info_QC_table['Resting_potential_mV'])
-            Resting_potential_SD = np.nanstd(sub_sweep_info_QC_table['Resting_potential_mV'])
             
-            cell_linear_values_line = pd.DataFrame([str(cell_id),IR_regression_fit,IR_SD,Time_cst_mean,Time_cst_SD,Resting_potential_regression_fit, Resting_potential_SD ]).T
+            Resting_potential_mean, Resting_potential_SD = compute_cell_resting_potential(cell_dict)
+            
+            
+            cell_linear_values_line = pd.DataFrame([str(cell_id),Cell_IR,IR_SD,Time_cst_mean,Time_cst_SD,Resting_potential_mean, Resting_potential_SD ]).T
             cell_linear_values_line.columns = ['Cell_id','Input_Resistance_GOhms','Input_Resistance_GOhms_SD','Time_constant_ms','Time_constant_ms_SD', "Resting_potential_mV", 'Resting_potential_mV_SD']
             cell_linear_values=pd.concat([cell_linear_values,cell_linear_values_line],ignore_index=True)
             
@@ -1149,7 +1259,11 @@ def create_summary_tables(config_json_file_path, saving_path):
                             Hill_Half_cst, Hill_amplitude, Hill_coef, Hill_x0, Output_Duration, Response_type, Sigmoid_k,Sigmoid_x0 = empty_array
                         
                             
-                        
+                        if Gain<=0:
+                            Gain=np.nan
+
+                            
+                            
                         new_line=pd.DataFrame([str(cell_id),I_O_obs,Gain,Threshold,Saturation_Frequency,Saturation_Stimulus,response_type,output_duration]).T
                         new_line.columns=Full_feature_table.columns
                         Full_feature_table = pd.concat([Full_feature_table,new_line],ignore_index=True)
@@ -1226,7 +1340,7 @@ def create_summary_tables(config_json_file_path, saving_path):
             sub_table=Full_feature_table.loc[(Full_feature_table['Response_type']==response_type)&(Full_feature_table['Output_Duration']==output_duration),]
             sub_table=sub_table.drop(['Response_type','Output_Duration'], axis=1)
             sub_table=sub_table.reindex(columns=new_table.columns)
-            
+            sub_table['Gain'] = sub_table['Gain'].where(sub_table['Gain'] >= 0, np.nan)
             
             new_table = pd.concat([new_table,sub_table],ignore_index=True)
             if len(new_table['Cell_id'].unique())!=new_table.shape[0]:
@@ -1248,7 +1362,7 @@ def create_summary_tables(config_json_file_path, saving_path):
                 output_duration*=1000
                 output_duration=str(str(int(output_duration))+'ms')
             
-            #new_table.to_csv(str(saving_path+str(response_type+'_'+str(output_duration))+'.csv'))
+
             new_table.to_csv(f"{saving_path}Full_Feature_Table_{response_type}_{output_duration}.csv")
             
             
@@ -1365,117 +1479,79 @@ def summarize_features_evolution(Full_I_O_features_table):
     cell_features_slope_int_table_with_cell_ids=pd.concat([unit_line,cell_features_slope_int_table_with_cell_ids],axis=0,ignore_index=True)
     return cell_features_slope_int_table_with_cell_ids
 
-import plotly.express as px
 
 
-def plot_sunburst_pop_class_table(Full_population_class_table, saving_path):
-    Full_population_class_table_copy = Full_population_class_table.copy()
     
-    color_dict = {'Allen_Cell_Type_Database':"#027510",
-                  "Lantyer_Database" : "#02ad19",
-                  "NVC_Database" : "#02de20",
-                  "Scala_2019_DB" : "#50d462",
-                  "Scala_2021" : "#399946",
-                  "Harisson_Database" : "#79f78a",
-                  "Room Temperature" : "#635cf7",
-                  "25 C" : "#837dfa",
-                  "32 C" : "#fc9338",
-                  "34 C" : "#d17626",
-                  "Physiological temperature" : "#f0a767",
-                  "VIS" : "#0249a6",
-                  "SS" : "#2b5894",
-                  "MO" : "#657e9e",
-                  "AUD" : "#768291",
-                  "TE" : "#768291",
-                  "RSP":"#768291",
-                  "1" : "#038c9e",
-                  "2/3" : "#02a2b8",
-                  "4" : "#02bad4",
-                  "5" :'#44c2d4',
-                  "6" : "#6fc4d1",
-                  "Excitatory": "#02a866",
-                  "PValb" : "#ad4102",
-
-                  "Sst" : "#e35502",
-                  "Htr3a" : "#d9804c",
-                  "Vip":"#f76240",
-
-                  "NPY":"#bf452a",
-                  "--" :"#ffffff",
-                  "Unknown" : "#ffffff"}
-    
-    
-    fig = px.sunburst(
-        Full_population_class_table,
-        path=['Database', "Recording_Temperature", 'General_area','Layer_second','Cell_type'],
-        
-        )
-    # Update the text to hide labels with value "--"
-    labels = fig.data[0].labels
-    custom_labels = [label if label != "--" else "" for label in labels]
-
-    fig.update_traces(
-    textinfo="label+value",
-    #insidetextorientation='horizontal'
-    )
+def get_first_spike_features_hat(config_json_file):
+    '''
     
 
-    fig.update_traces(marker_colors=[color_dict[cat] for cat in fig.data[-1].labels])
-    fig.write_image(saving_path, format='pdf',width=1300, height=900)
-    fig.show()
+    Extracts and compiles the features of the first spike for a collection of cells across databases.
+
+    This function processes spike feature data for cells listed in a configuration file. It iterates 
+    over databases, reads population and configuration information, and extracts spike features 
+    (threshold, height, upstroke, downstroke, etc.) for the first spike in each sweep of each cell. 
+    Results from all cells are combined into a single table, including a row for units of measurement.
+
+    Parameters
+    ----------
+    config_json_file : pandas.DataFrame
+        A DataFrame containing configuration information for multiple databases.
+        Must include the following columns:
+        - 'database_name': Name of the database.
+        - 'db_population_class_file': Path to a CSV file containing cell population information.
+
+    Returns
+    -------
+    Full_spike_table : pandas.DataFrame
+        A DataFrame containing the first spike features for all cells in all databases, with the following columns:
+        - 'Cell_id': Identifier of the cell.
+        - 'Sweep': Sweep ID where the spike was observed.
+        - 'Stim_amp_pA': Stimulation amplitude in pA.
+        - 'Spike_threshold': Spike threshold in mV.
+        - 'Spike_heigth': Spike height in mV.
+        - 'Spike_Upstroke': Upstroke velocity in mV/s.
+        - 'Spike_Downstroke': Downstroke velocity in mV/s.
+        - 'Spike_peak': Spike peak value in mV.
+        - 'Spike_trough': Spike trough value in mV.
+        - 'Spike_width': Spike width in seconds.
+        The first row contains the units of measurement for each column.
+
+    Notes
+    -----
+    - Uses parallel processing to speed up the computation of spike features for multiple cells using `concurrent.futures.ProcessPoolExecutor`.
+    - Each database's cell population table is read from the file specified in the configuration file.
+    - Results are compiled into a single DataFrame with units added as the first row.
+    - A progress bar (`tqdm`) is displayed to track processing progress for each database.
+
+
+    '''
     
-def gather_BE_per_cell(config_json_file):
-    
-    BE_table = pd.DataFrame(columns = ['Cell_id', 'Database', "Sweep", "Bridge_Error_GOhms", "Bridge_Error_extrapolated"])
-    BE_table_list = []
-    BE_table_list.append(BE_table)
+    unit_line=pd.DataFrame(['--','--','pA','mV','mV','mV/s','mV/s','mV', "mV", 's']).T
+    Full_spike_table=pd.DataFrame(columns=['Cell_id','Sweep','Stim_amp_pA','Spike_threshold','Spike_heigth', "Spike_Upstroke", "Spike_Downstroke", "Spike_peak", 'Spike_trough', 'Spike_width'])
+    results_lists = []
     for database in config_json_file.loc[:,'database_name'].unique():
         database_cell_pop_table_file = config_json_file.loc[config_json_file['database_name']==database,"db_population_class_file"].values[0]
         database_config_line = config_json_file.loc[config_json_file['database_name']==database,:]
         database_cell_pop_table = pd.read_csv(database_cell_pop_table_file)
-        for cell_id in tqdm.tqdm(database_cell_pop_table.loc[:,'Cell_id'].unique(),desc=f"Processing Database {database}"):
-            cell_dict = read_cell_file_h5(cell_id,database_config_line,selection=['Sweep analysis'])
-            sweep_info_table = cell_dict['Sweep_info_table']
+        cell_id_list = list(database_cell_pop_table.loc[:,'Cell_id'].unique())
+        
+        args_list = [[x, 
+                      database_config_line] for x in cell_id_list]
+        
+        with concurrent.futures.ProcessPoolExecutor(max_workers = 7) as executor:
+            problem_cell_list = {executor.submit(sp_an.get_first_spike_features,x): x for x in args_list}
+            for f in tqdm.tqdm(concurrent.futures.as_completed(problem_cell_list),total = len(cell_id_list), desc=f'Processing {database}'):
+                spike_lines = f.result()
+                if spike_lines is not None:
+                    results_lists.append(f.result())
+        
+        
+    Full_spike_table = pd.concat(results_lists)
+    unit_line.columns = Full_spike_table.columns
+    Full_spike_table = pd.concat([unit_line, Full_spike_table], ignore_index = True)
+    
+    return Full_spike_table
+    
             
-            try:
-                sub_sweep_info_table = sweep_info_table.loc[sweep_info_table['Bridge_Error_extrapolated']==False,["Sweep", "Bridge_Error_GOhms", "Bridge_Error_extrapolated"]].copy()
-                sub_sweep_info_table.loc[:,"Database"] = database
-                sub_sweep_info_table.loc[:,"Cell_id"] = str(cell_id)
-                
-            except:
-                sub_sweep_info_table = pd.DataFrame([cell_id, database, "--",np.nan,True]).T
-                sub_sweep_info_table.columns = ['Cell_id', 'Database', "Sweep", "Bridge_Error_GOhms", "Bridge_Error_extrapolated"]
-            BE_table_list.append(sub_sweep_info_table)
-            
-    BE_table = pd.concat(BE_table_list, ignore_index=True)
-    
-    return BE_table
-            
-            
-    
-def compare_lists(list1, list2):
-    # 1. Print the length of both lists
-    print(f"Length of first list: {len(list1)}")
-    print(f"Length of second list: {len(list2)}")
-    
-    # 2. Elements in both lists (intersection)
-    common_elements = set(list1) & set(list2)
-    print(f"Elements in both lists: {common_elements}")
-    
-    # 3. Elements in the first list but not in the second (difference)
-    in_first_not_in_second = set(list1) - set(list2)
-    print(f"Elements in the first list but not in the second: {in_first_not_in_second}")
-    
-    # 4. Elements in the second list but not in the first (difference)
-    in_second_not_in_first = set(list2) - set(list1)
-    print(f"Elements in the second list but not in the first: {in_second_not_in_first}")
-
-
-    
-    
-    
-    
-    
-    
-    
-    
+   

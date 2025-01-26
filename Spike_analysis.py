@@ -9,6 +9,8 @@ import pandas as pd
 import numpy as np
 import plotnine as p9
 import logging
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 import Ordinary_functions as ordifunc
 
 def create_cell_Full_SF_dict_table(original_Full_TVC_table, original_cell_sweep_info_table,do_filter=True,BE_correct =True):
@@ -105,12 +107,12 @@ def create_Full_SF_table(original_Full_TVC_table, original_Full_SF_dict, cell_sw
         current_sweep = str(current_sweep)
 
         current_TVC=ordifunc.get_filtered_TVC_table(Full_TVC_table,current_sweep,do_filter=do_filter,filter=5.,do_plot=False)
-        
-        if BE_correct == True:
-            BE = cell_sweep_info_table.loc[cell_sweep_info_table['Sweep'] == current_sweep,'Bridge_Error_GOhms'].values[0]
+        BE = cell_sweep_info_table.loc[cell_sweep_info_table['Sweep'] == current_sweep,'Bridge_Error_GOhms'].values[0]
+        if BE_correct == True and not np.isnan(BE) :
+            
             current_TVC.loc[:,'Membrane_potential_mV'] -= BE*current_TVC.loc[:,'Input_current_pA']
                 
-            
+
         
         current_SF_table = create_SF_table(current_TVC, Full_SF_dict.loc[current_sweep, 'SF_dict'].copy())
         new_line = pd.DataFrame(
@@ -272,8 +274,10 @@ def get_spike_half_width(TVC_table_original, SF_table_original):
         half_height_width = half_width_end - half_width_start
         
         half_width_line = pd.DataFrame([half_height_width, np.nan, stim_amp_pA, np.nan, np.nan, "Spike_width_at_half_heigth",spike_index ]).T
+        
         half_width_line.columns = SF_table_original.columns
-        half_width_line = spike_height_line.astype({'Time_s':'float',
+
+        half_width_line = half_width_line.astype({'Time_s':'float',
                                     'Membrane_potential_mV' : 'float',
                                     'Input_current_pA' : 'float',
                                     'Potential_first_time_derivative_mV/s' : 'float', 
@@ -322,13 +326,11 @@ def identify_spike(membrane_trace_array,time_array, current_trace, stim_start_ti
                         
 
     first_derivative=ordifunc.get_derivative(membrane_trace_array,time_array)
-    #first_derivative=np.insert(first_derivative,0,np.nan)
+    
 
     second_derivative=ordifunc.get_derivative(first_derivative,time_array)
     filtered_second_derivative = ordifunc.filter_trace(second_derivative,time_array,filter=1.,do_plot=False)
-    #filtered_second_derivative = ordifunc.filter_trace(second_derivative,time_array[2:],filter=1.,do_plot=False)
-    #second_derivative=np.insert(second_derivative,0,[np.nan,np.nan])
-    #filtered_second_derivative = np.insert(filtered_second_derivative,0,[np.nan,np.nan])
+    
     TVC_table=pd.DataFrame({'Time_s':time_array,
                                'Membrane_potential_mV':membrane_trace_array,
                                'Input_current_pA':current_trace,
@@ -621,8 +623,7 @@ def detect_putative_spikes(v, t, start=None, end=None, filter=5., dv_cutoff=20.,
     if not isinstance(t, np.ndarray):
         raise TypeError("t is not an np.ndarray")
 
-    # if v.shape != t.shape:
-    #     raise er.FeatureError("Voltage and time series do not have the same dimensions")
+    
 
     if start is None:
         start = t[0]
@@ -776,7 +777,7 @@ def find_upstroke_indexes(v, t, spike_indexes, peak_indexes, filter=5., dvdt=Non
                         zip(spike_indexes, peak_indexes)]
 
     upstroke_indexes = np.array(upstroke_indexes)
-    #upstroke_indexes = upstroke_indexes.astype(int)
+    
     return upstroke_indexes
 
 
@@ -837,7 +838,7 @@ def refine_threshold_indexes(v, t, peak_indexes,upstroke_indexes,method="Mean_up
                 threshold_indexes.append(upstk - voltage_indexes[0])
     
         threshold_indexes = np.array(threshold_indexes)
-        #threshold_indexes = threshold_indexes.astype(int)
+        
         return threshold_indexes
 
 def check_thresholds_and_peaks(v, t, spike_indexes, peak_indexes, upstroke_indexes, start=None, end=None,
@@ -963,13 +964,13 @@ def check_thresholds_and_peaks(v, t, spike_indexes, peak_indexes, upstroke_index
     clipped = find_clipped_spikes(v, t, spike_indexes, peak_indexes, end_index, tol)
     
     spike_indexes = np.array(spike_indexes)
-    #spike_indexes = spike_indexes.astype(int)
+    
     
     peak_indexes = np.array(peak_indexes)
-    #peak_indexes = peak_indexes.astype(int)
+    
     
     upstroke_indexes = np.array(upstroke_indexes)
-    #upstroke_indexes = upstroke_indexes.astype(int)
+    
     
 
     
@@ -1071,10 +1072,7 @@ def find_fast_AHP_indexes(v, t, spike_indexes, peak_indexes, clipped=None, end=N
             fast_AHP_indexes.append(int(v[peak:wnd].argmin() + peak ))
             
         
-    # fast_AHP_indexes = [v[peak:wnd].argmin() + peak if np.flatnonzero(dvdt[peak:wnd] >= 0) and
-    #                     np.min(v[peak:wnd])<=thresh 
-    #                     for peak , wnd,thresh
-    #                         in zip(peak_indexes, window_closing_idx,spike_indexes) ] #Detect lowest voltage value in a 5ms window after last peak
+   
     if len(fast_AHP_indexes) > 0:
         if fast_AHP_indexes[-1]>=end_index: #If the last fast trough detected is after end_time index (because of the closing window of 5ms), redefine it at end_index
             fast_AHP_indexes[-1]=end_index
@@ -1090,7 +1088,7 @@ def find_fast_AHP_indexes(v, t, spike_indexes, peak_indexes, clipped=None, end=N
     # trough_indexes = trough_indexes[np.where(peak_indexes[:len(trough_indexes)] != trough_indexes)]
     
     fast_AHP_indexes = np.array(fast_AHP_indexes)
-    #fast_AHP_indexes = fast_AHP_indexes.astype(int)
+
     return fast_AHP_indexes
 
 def find_slow_trough_indexes(v, t, spike_indexes, fast_trough_indexes, clipped=None, end=None):
@@ -1136,7 +1134,7 @@ def find_slow_trough_indexes(v, t, spike_indexes, fast_trough_indexes, clipped=N
 
     # nwg - trying to remove this next part for now - can't figure out if this will be needed with new "clipped" method
     slow_trough_indexes=np.array(slow_trough_indexes)
-    #slow_trough_indexes = slow_trough_indexes.astype(int)
+
     return slow_trough_indexes
 
 def find_trough_indexes(v, t, spike_indexes, peak_indexes, clipped=None, end=None):
@@ -1183,7 +1181,7 @@ def find_trough_indexes(v, t, spike_indexes, peak_indexes, clipped=None, end=Non
     
     trough_indexes = trough_indexes[np.where(peak_indexes[:len(trough_indexes)] != trough_indexes)]
     trough_indexes = np.array(trough_indexes)
-    #trough_indexes = trough_indexes.astype(int)
+
     return trough_indexes
 
 def find_downstroke_indexes(v, t, peak_indexes, trough_indexes, clipped=None, filter=5., dvdt=None):
@@ -1217,8 +1215,6 @@ def find_downstroke_indexes(v, t, peak_indexes, trough_indexes, clipped=None, fi
 
     if len(peak_indexes) < len(trough_indexes):
         raise ValueError("Cannot have more troughs than peaks")
-# Taking this out...with clipped info, should always have the same number of points
- #   peak_indexes = peak_indexes[:len(trough_indexes)]
 
     
     valid_peak_indexes = peak_indexes[~clipped].astype(int)
@@ -1368,34 +1364,45 @@ def find_fast_trough_adp_slow_trough(v, t, spike_indexes, peak_indexes, downstro
     # slow_trough_indexes = slow_trough_indexes.astype(int)
     
     return fast_trough_indexes, adp_indexes, slow_trough_indexes, clipped
-    # # If we had to kick some spikes out before, need to add nans at the end
-    # output = []
-    # output.append(np.array(isi_types))
-    # for d in (fast_trough_indexes, adp_indexes, slow_trough_indexes):
-    #     output.append(np.array(d, dtype=float))
+    
 
-    # if orig_len > len(isi_types):
-    #     extra = np.zeros(orig_len - len(isi_types)) * np.nan
-    #     output = tuple((np.append(o, extra) for o in output))
-
-    # # The ADP and slow trough for the last spike in a train are not reliably
-    # # calculated, and usually extreme when wrong, so we will NaN them out.
-    # #
-    # # Note that this will result in a 0 value when delta V or delta T is
-    # # calculated, which may not be strictly accurate to the trace, but the
-    # # magnitude of the difference will be less than in many of the erroneous
-    # # cases seen otherwise
-
-    # output[2][-1] = np.nan # ADP
-    # output[3][-1] = np.nan # slow trough
-
-    # clipped[~clipped] = update_clipped
-    # return output, clipped
-
-import plotly.graph_objects as go
-from plotly.subplots import make_subplots
 
 def plot_trace_with_spike_features(Full_TVC_table, Full_SF_table,sweep_info_table, sweep, BE_corrected,  superimpose_BE):
+    '''
+    Plot a two-panel figure showing membrane potential and input current over time, with optional features overlayed.
+
+    This function generates a Plotly figure displaying:
+    1. The membrane potential trace over time, optionally corrected for bridge error (BE).
+    2. The input current over time, with features from the spike feature table superimposed.
+
+    Parameters
+    ----------
+    Full_TVC_table : pandas.DataFrame
+        A DataFrame containing time-series data for traces of membrane potential and input current.
+        Each row corresponds to a sweep, and 'TVC' column contains the trace data as nested DataFrames.
+    Full_SF_table : pandas.DataFrame
+        A DataFrame containing spike feature data for different sweeps. The 'SF' column contains nested
+        DataFrames with spike features (e.g., threshold, peak, trough).
+    sweep_info_table : pandas.DataFrame
+        A DataFrame containing metadata for each sweep, such as bridge error values in "Bridge_Error_GOhms".
+    sweep : str or int
+        Identifier for the specific sweep to plot.
+    BE_corrected : bool
+        If True, correct the membrane potential for bridge error using the formula:
+        `Membrane_potential_mV = Membrane_potential_mV - (Bridge_Error * Input_current_pA)`.
+    superimpose_BE : bool
+        If True, and `BE_corrected` is enabled, superimpose the uncorrected membrane potential trace
+        on the corrected trace for comparison.
+
+    Returns
+    -------
+    None
+        Displays an interactive Plotly figure with the following:
+        - Top panel: Membrane potential over time, with optional feature markers.
+        - Bottom panel: Input current over time.
+
+    '''
+    
     TVC = Full_TVC_table.loc[sweep, 'TVC'].copy()
     SF_table = Full_SF_table.loc[sweep,'SF'].copy()
     BE = sweep_info_table.loc[sweep, "Bridge_Error_GOhms"]
@@ -1465,6 +1472,51 @@ def plot_trace_with_spike_features(Full_TVC_table, Full_SF_table,sweep_info_tabl
 
 ###Functions used for clustering
 def get_cell_spikes_traces(Full_TVC_table, Full_SF_table):
+    '''
+    Extract spike-centered traces from time-series voltage data.
+
+    This function processes time-series data to extract and align spike-centered voltage traces 
+    (membrane potential and its first derivative) for each detected spike in the input data. 
+    It constructs a table containing these traces, centered on the peak of each spike, along with 
+    metadata such as the sweep identifier and spike index.
+
+    Parameters
+    ----------
+    Full_TVC_table : pandas.DataFrame
+        A DataFrame containing time-series voltage and current data for multiple sweeps.
+        Each row represents a sweep, and the DataFrame includes at least the following columns:
+        - "Sweep": Identifier for each sweep.
+        - Nested "TVC" DataFrame containing:
+            - "Membrane_potential_mV": Voltage trace.
+            - "Potential_first_time_derivative_mV/s": First derivative of the voltage.
+            - "Time_s": Time stamps for the traces.
+    Full_SF_table : pandas.DataFrame
+        A DataFrame containing spike feature data for multiple sweeps.
+        Each row represents a sweep, and the DataFrame includes at least the following columns:
+        - "Sweep": Identifier for each sweep.
+        - Nested "SF" DataFrame containing:
+            - "Feature": Type of feature detected (e.g., "Peak").
+            - "Time_s": Time stamps of the detected feature (e.g., spike peaks).
+
+    Returns
+    -------
+    spike_trace_table : pandas.DataFrame
+        A DataFrame containing spike-centered traces and metadata. Includes the following columns:
+        - "Membrane_potential_mV": Voltage trace values.
+        - "Potential_first_time_derivative_mV/s": First derivative of voltage values.
+        - "Time_s": Time relative to the spike peak (centered on 0).
+        - "Sweep": Sweep identifier for each spike trace.
+        - "Spike_index": Unique index for each spike.
+
+    Notes
+    -----
+    - The function extracts a 3 ms window of data around each detected spike (1 ms before and 2 ms after the spike peak).
+    - Spike-centered traces are aligned such that the spike peak occurs at `Time_s = 0`.
+    - Spikes are identified based on the "Peak" feature in `Full_SF_table`.
+    - If no spikes are detected for a sweep, that sweep is skipped.
+
+    
+    '''
     
     sweep_list = Full_TVC_table.loc[:,'Sweep']
     spike_trace_table = pd.DataFrame(columns=["Membrane_potential_mV",'Potential_first_time_derivative_mV/s',"Time_s","Sweep", 'Spike_index'])
@@ -1494,6 +1546,95 @@ def get_cell_spikes_traces(Full_TVC_table, Full_SF_table):
             
     return spike_trace_table
 
+def get_first_spike_features(arg_list):
+    '''
+    
+    Extract features of the first spike for a given cell and its sweeps.
+    
+        This function identifies and extracts the features of the first spike 
+        from electrophysiological recordings for a specified cell. If no spikes 
+        are detected in any sweeps, the function returns a placeholder row 
+        with NaN values.
+    
+        Parameters
+        ----------
+        arg_list : list
+            A list containing two elements:
+            - cell_id : str
+                Unique identifier for the cell.
+            - database_config_line : dict
+                Configuration details for accessing the database, used by `ordifunc.read_cell_file_h5`.
+    
+        Returns
+        -------
+        new_spike_line : pandas.DataFrame
+            A single-row DataFrame containing the first spike's features for the cell.
+            Columns include:
+            - 'Cell_id' : str
+                Identifier of the cell.
+            - 'Sweep' : str
+                Identifier of the sweep containing the first spike.
+            - 'Stim_amp_pA' : float
+                Stimulation amplitude in picoamperes for the sweep.
+            - 'Spike_threshold' : float
+                Membrane potential (mV) at which the spike initiates.
+            - 'Spike_heigth' : float
+                Spike height (mV).
+            - 'Spike_Upstroke' : float
+                Maximum rate of rise (first derivative, mV/s) during the spike upstroke.
+            - 'Spike_Downstroke' : float
+                Maximum rate of fall (first derivative, mV/s) during the spike downstroke.
+            - 'Spike_peak' : float
+                Membrane potential (mV) at the spike's peak.
+            - 'Spike_trough' : float
+                Membrane potential (mV) at the trough following the spike.
+            - 'Spike_width' : float
+                Spike width at half-height (s).
+    
+        Notes
+        -----
+        - The function reads data using `ordifunc.read_cell_file_h5`, assuming the presence of `Sweep_info_table` 
+          and `Full_SF_table` in the returned cell dictionary.
+        - It processes sweeps in ascending order of stimulation amplitude (`Stim_amp_pA`) and stops after 
+          extracting the first spike's features.
+        - If a sweep contains no spikes, it is skipped.
+        - If no spikes are detected across all sweeps, placeholder values are returned with NaNs.
+        - Errors during execution (e.g., missing data or invalid input) result in a default placeholder row.
+
+
+    '''
+    cell_id, database_config_line = arg_list
+    try:
+        cell_dict = ordifunc.read_cell_file_h5(cell_id,database_config_line,selection=['All'])
+        sweep_info_table = cell_dict['Sweep_info_table']
+        Full_SF_table = cell_dict['Full_SF_table']
+        sweep_info_table = sweep_info_table.sort_values(by=['Stim_amp_pA'])
+        sweep_list = np.array(sweep_info_table.loc[:,"Sweep"])
+        for sweep in sweep_list:
+            sub_SF_table = Full_SF_table.loc[sweep,"SF"]
+            if sub_SF_table.shape[0]!=0:
+                first_spike_features_table = sub_SF_table.loc[sub_SF_table['Spike_index']==np.nanmin(sub_SF_table['Spike_index']),:]
+                Threshold = first_spike_features_table.loc[first_spike_features_table['Feature']=='Threshold',"Membrane_potential_mV"].values[0]
+                Heigth = first_spike_features_table.loc[first_spike_features_table['Feature']=='Spike_heigth',"Membrane_potential_mV"].values[0]
+                Upstroke = first_spike_features_table.loc[first_spike_features_table['Feature']=='Upstroke',"Potential_first_time_derivative_mV/s"].values[0]
+                Downstroke = first_spike_features_table.loc[first_spike_features_table['Feature']=='Downstroke',"Potential_first_time_derivative_mV/s"].values[0]
+                Peak = first_spike_features_table.loc[first_spike_features_table['Feature']=='Peak',"Membrane_potential_mV"].values[0]
+                Trough = first_spike_features_table.loc[first_spike_features_table['Feature']=='Trough',"Membrane_potential_mV"].values[0]
+                Width = first_spike_features_table.loc[first_spike_features_table['Feature']=='Spike_width_at_half_heigth',"Time_s"].values[0]
+                
+                Stim_amp_pA = sweep_info_table.loc[sweep, 'Stim_amp_pA']
+                
+                new_spike_line = pd.DataFrame([cell_id, sweep, Stim_amp_pA, Threshold, Heigth, Upstroke, Downstroke, Peak, Trough, Width ]).T
+                new_spike_line.columns = ['Cell_id','Sweep','Stim_amp_pA','Spike_threshold','Spike_heigth', "Spike_Upstroke", "Spike_Downstroke", "Spike_peak", 'Spike_trough', 'Spike_width']
+                break
+            else:
+                new_spike_line = pd.DataFrame([cell_id, sweep, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan ]).T
+                new_spike_line.columns = ['Cell_id','Sweep','Stim_amp_pA','Spike_threshold','Spike_heigth', "Spike_Upstroke", "Spike_Downstroke", "Spike_peak", 'Spike_trough', 'Spike_width']
+        return new_spike_line
+    except:
+        new_spike_line = pd.DataFrame([cell_id, '--', np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan ]).T
+        new_spike_line.columns = ['Cell_id','Sweep','Stim_amp_pA','Spike_threshold','Spike_heigth', "Spike_Upstroke", "Spike_Downstroke", "Spike_peak", 'Spike_trough', 'Spike_width']
+        return new_spike_line
 
 
 

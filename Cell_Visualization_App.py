@@ -10,12 +10,14 @@ import pandas as pd
 import numpy as np
 import os
 import importlib
-
+import json
+import ast
 from shiny import App, Inputs, Outputs, Session, render, ui,reactive,req
-
-
-
-
+import math
+import time
+import concurrent
+import random
+import Analysis_pipeline as analysis_pipeline
 import Sweep_analysis as sw_an
 import Spike_analysis as sp_an
 import Firing_analysis as fir_an
@@ -33,218 +35,414 @@ from plotly.express.colors import sample_colorscale
 from plotly.subplots import make_subplots
 from sklearn.preprocessing import minmax_scale 
 
+# # Load the external script dynamically
+# script_path = "Analysis_pipeline.py"
+# spec = importlib.util.spec_from_file_location("Analysis_pipeline", script_path)
+# script_module = importlib.util.module_from_spec(spec)
+# spec.loader.exec_module(script_module)
+
 
 # In fast mode, throttle interval in ms.
 FAST_INTERACT_INTERVAL = 60
 
 app_ui = ui.page_fluid(
-    ui.panel_title("Cell Visualization App"),
-    ui.layout_sidebar(
-        
-        
-        
-        ui.panel_sidebar(
-            ui.input_file("JSON_config_file", 'Choose JSON configuration files'),
-            ui.input_selectize("Cell_file_select","Select Cell to Analyse",choices=[]),
-            ui.input_action_button('Update_cell_btn','Update Cell'),
-            
-            
-        ),
-        ui.panel_main(
-            ui.output_table('config_json_table')
-        ),
-    ),
-    
-    
+    ui.h1("Welcome to TACO pipeline"),
     ui.navset_tab_card(
-        ui.nav("Cell Information",
-               ui.layout_sidebar(
-                   ui.panel_sidebar(width=0),
-                   ui.panel_main(
-                       ui.navset_pill_card(
-                           
-                           # ui.nav("Sweep information",
-                           #        ui.output_data_frame('Sweep_info_table'),
-                           #        ),
-                           
-                           ui.nav('Cell summary',
-                                  
-                                  ui.row(
-                                      ui.column(2,ui.output_table("Cell_Metadata_table")),
-                                      ui.column(2,ui.output_table("Cell_linear_properties_table")),
-                                      ui.column(4,ui.output_table("Cell_Firing_properties_table"),
-                                                ui.output_table("Cell_Adaptation_table")),
-                                      
-                                      
-                                  ),
-                           ),       
-                           ui.nav('Linear properties',
-
-                                  ui.row(
-                                      ui.column(4,output_widget("cell_Holding_potential_v_Holding_current_plolty"),
-                                                output_widget("cell_SS_potential_v_stim_amp_plolty")),
-                                      ui.column(4,output_widget("cell_input_resistance_v_stim_amp_plolty"),
-                                                output_widget('cell_time_constant_v_stim_amp_plolty'),
-                                                ),
-                                      ui.column(4,output_widget("cell_Holding_current_pA_v_stim_amp_plolty"),
-                                                output_widget("cell_Holding_potential_mV_v_stim_amp_plolty")
-                                                )
-                                      
-                                  ),
-                           ),
-                           ui.nav('Processing report', 
-                                  ui.output_table('cell_processing_time_table')),
-                       
-                       
-                   ),
-               ))),
-
-        ui.nav("Sweep Analysis",
-               ui.layout_sidebar(
-                   ui.panel_sidebar(
-                                    ui.input_selectize("Sweep_selected","Select Sweep to Analyse",choices=[]),
-                                    ui.input_checkbox("BE_correction", "Correct for Bridge Error"),
-                                    ui.input_checkbox("Superimpose_BE_Correction", "Superimpose BE Correction"),
-                                
-                                    width=2),
-                   ui.panel_main(
-                       ui.navset_tab(
-                           ui.nav("Sweep information",
-                                  ui.output_data_frame('Sweep_info_table')),
-                           ui.nav('Spike Analysis', 
-                                  
-                                  output_widget('Sweep_spike_plotly'),
-                                  
-                                  ui.output_data_frame('Sweep_spike_features_table')),
-                           ui.nav("Spike phase plot",
-                                  ui.row(ui.column(6,
-                                                   output_widget("Spike_superposition_plot")),
-                                         ui.column(6,
-                                                   output_widget("Spike_phase_plane_plot"))),
-                                  ),
-                           
-                                  
-                                  
-                                  
-                           ui.nav('Sweep_QC',
-                                  ui.output_table('Sweep_QC_table')),
-                           ui.nav('Bridge Error analysis',
-                                  
-                                  output_widget("BE_plotly"),
-                                  ui.output_text_verbatim("BE_value"),
-                                  ui.output_table('BE_conditions_table'),
-                                  
-                                  ),
-                           ui.nav('Linear properties analysis',
-                                  ui.output_table("linear_properties_conditions_table"),
-                                  ui.output_plot("linear_properties_fit"),
-                                  ui.output_table('linear_properties_fit_table'),
-                                  ui.output_table("linear_properties_table")
-                                  ),
-                           ),
-                       
-                      
-                   ),
-               )),
-
-        ui.nav("Firing Analysis",
-            ui.layout_sidebar(
-                ui.panel_sidebar(width=0),
-                ui.panel_main(
-                    ui.navset_pill(
-                        ui.nav("I/O",
-                               ui.input_select('Firing_response_type', "Select response type", choices=['Time_based','Index_based','Interval_based']),
-                               output_widget("Time_based_IO_plotly"),
-                               
-                               
-                               
-                               ui.row(
-                                   ui.column(2,ui.tags.b("Gain"),output_widget("Gain_regression_plot_time_based_Second")),
-                                   ui.column(2,ui.tags.b("Threshold"),output_widget("Threshold_regression_plot_Second")),
-                                   ui.column(2,ui.tags.b("Saturation Frequency"),output_widget("Saturation_Frequency_regression_plot_Second")),
-                                   ui.column(2,ui.tags.b("Saturation Stimulus"),output_widget("Saturation_Stimulus_regression_plot_Second")),
-                                   ui.column(2,ui.tags.b("Response Failure Frequency"),output_widget("Response_Failure_Frequency_regression_plot_Second")),
-                                   ui.column(2,ui.tags.b("Response Failure Stimulus"),output_widget("Response_Failure_Stimulus_regression_plot_Second"))
-                                   ),
-                               
-                               ui.row(
-                                   ui.column(2,ui.output_table("Gain_regression_table_time_based_Second")),
-                                   ui.column(2,ui.output_table("Threshold_regression_table_Second")),
-                                   ui.column(2,ui.output_table("Saturation_Frequency_regression_Second")),
-                                   ui.column(2,ui.output_table("Saturation_Stimulus_regression_Second")),
-                                   ui.column(2,ui.output_table("Response_Fail_Frequency_regression_Second")),
-                                   ui.column(2,ui.output_table("Response_Fail_Stimulus_regression_Second"))
-                                   )
-                               ),
-                        
-                        ui.nav("Details",
-                               ui.row(ui.input_select('Firing_response_type_new','Select response type',choices=["Time_based","Index_based","Interval_based"]),
-                                      ui.input_select('Firing_output_duration_new','Select response type',choices=[]),
-                                      ui.input_selectize('Plot_new', "Select plot to display", choices=[]),
-                                      #ui.download_button('Save_Detail_Firing_plot','Save plot'),
-                                      ),
-                               
-                               
-                               output_widget("Time_based_IO_plotly_new"),
-                               ui.output_table("IO_fit_parameter_table")
-                               
-
-                               
-                               
-                               
-                               ),
-                        ui.nav("Adaptation",
-                               ui.input_select('Adaptation_feature_to_display', "Select feature ", choices=[]),
-                               output_widget("Adaptation_plotly"),
-                               ui.output_table("Adaptation_table"),
-                               
-                               
-                               )
-                        ),
-                    width=12,
-                    
-                    )
-                ),
-                
-            
-        ),
         
-        ui.nav("In progress",
+        ui.nav(
+            "Create JSON configuration file",
+            
             ui.layout_sidebar(
                 ui.panel_sidebar(
-                                 ui.input_selectize("Sweep_selected_in_progress","Select Sweep to Analyse",choices=[]),
-                                 ui.input_selectize("x_Spike_feature","Select spike feature X axis",choices=['Downstroke','fAHP','Fast_Trough','Peak','Spike_heigth','Spike_width_at_half_heigth','Threshold','Trough','Upstroke']),
-                                 ui.input_selectize("y_Spike_feature","Select spike feature Y axis",choices=["Peak",'Downstroke','fAHP','Fast_Trough','Spike_heigth','Spike_width_at_half_heigth','Threshold','Trough','Upstroke']),
-                                 ui.input_selectize("y_Spike_feature_index","Which spike index for Y axis",choices=['N',"N-1","N+1"]),
-                                 ui.input_checkbox("BE_correction_in_process", "Correct for Bridge Error"),
-                                 
-                             
-                                 width=2),
+                    ui.h3("Create JSON configuration file"),
+                    ui.output_ui("add_database"),
+                    ui.input_action_button("save_json", "Save JSON"),
+                    ui.output_ui("save_json_status"),
+                    
+                    
+                ),
                 ui.panel_main(
-                    ui.navset_pill(
-                        ui.nav("Spike feature correlation",
-                               
-                               output_widget("Spike_features_index_correlation"),
-                               
-                               
-                               
-                               
-                               ),
-                        
+                    ui.layout_column_wrap(
+                        2,  # Two columns layout
+                        # First column
+                        ui.panel_main(
+                            ui.input_text(
+                                "json_file_path",
+                                "Enter File Path for Saving JSON file (ending in .json):",
+                                placeholder="Enter full path to save the JSON file, e.g., /path/to/folder/file.json",
+                            ),
+                            ui.input_action_button("check_dir_1", "Check File Path"),
+                            ui.br(),
+                            ui.output_ui("status_1"),
                         ),
-                    width=10
+                        # Second column
+                        ui.panel_main(
+                            ui.input_text(
+                                "Saving_folder",
+                                "Enter Saving Directory for Analysis:",
+                                placeholder="Enter path to saving folder, e.g., /path/to/folder/",
+                            ),
+                            ui.input_action_button("check_dir_2", "Check Saving Folder Path"),
+                            ui.br(),
+                            ui.output_ui("status_2"),
+                        ),
+                        # Second column
+                        ui.panel_main(
+                            ui.input_text(
+                                "Path_to_QC_file",
+                                "Enter Path to Quality Criteria File:",
+                                placeholder="Enter path to QC file, e.g., /path/to/folder/file.py",
+                            ),
+                            ui.input_action_button("check_QC_file_path", "Check QC file path"),
+                            ui.br(),
+                            ui.output_ui("status_QC_file"),
+                        ),
+                        
+
+                    ),
+                    ui.hr(),
+                    ui.layout_column_wrap(2,
+                        # Third column
+                        ui.panel_main(
+                            ui.row(
+                                # Row containing the buttons and input field
+                                
+                                ui.input_text(
+                                    "database_name",
+                                    "Enter Database Name:",
+                                    placeholder="Enter the name of the database, e.g., MyDatabase",
+                                ),
+                            ),
+                            ui.row(
+                                ui.column(4,
+                                          ui.input_text(
+                                              "original_file_path",
+                                              "Path to Original File:",
+                                              placeholder="Enter full path to the original file, e.g., /path/to/original/file.csv",
+                                          ),),
+                                ui.column(4, 
+                                          ui.input_action_button("Check_original_file_path", "Check original file path"),),
+                                ui.column(4,
+                                          ui.output_ui("status_original_file_path"),),),
+                                # Row containing the 'original_file_path' input and 'Check original file path' button
+                            ui.row(
+                                ui.column(4,
+                                          ui.input_text(
+                                              "database_python_script_path",
+                                              "Path to database python script:",
+                                              placeholder="e.g., /path/to/original/script.py",
+                                          )),
+                                ui.column(4,
+                                          ui.input_action_button("check_database_python_script_path", "Check database python script")),
+                                ui.column(4,
+                                          ui.output_ui("status_database_script_file")),
+                                ui.column(4,
+                                          ui.output_ui('import_database_script_file'))
+                                ),
+                            ui.row(
+                                ui.column(4,
+                                          ui.input_text(
+                                              "population_class_file",
+                                              "Path to database population class csv file:",
+                                              placeholder="e.g., /path/to/original/file.csv",
+                                          ),),
+                                ui.column(4,
+                                          ui.input_action_button("check_population_class_file_path", "Check database population class csv file")),
+                                ui.column(4,
+                                          ui.output_ui("status_population_class_file"))),
+                            
+                            
+                            ui.row(
+                                ui.column(4,
+                                          ui.input_text(
+                                              "cell_sweep_table_file",
+                                              "Path to database cell sweep csv file:",
+                                              placeholder="e.g., /path/to/original/file.csv",
+                                          ),),
+                                ui.column(4,
+                                          ui.input_action_button("check_cell_sweep_table_file_path", "Check database cell sweep csv file")),
+                                ui.column(4,
+                                          ui.output_ui("status_cell_sweep_table_file"))),
+                            
+                            ui.row(
+                                   ui.column(4,
+                                             ui.input_checkbox("stimulus_time_provided", "Are stimulus start and end times provided?")),
+                                   ui.column(4,
+                                             ui.input_numeric("stimulus_duration", "Indicate stimulus duration in s", 0.5))
+                           
+                                
+                                
+                                
+                                
+                            ),
+                            
+                            ui.input_action_button("Add_Database", "Add Database"),
+                            ui.br(),
+                            
+                            
+                        ),
                     )
                 ),
-                
-            
-        ),
+            ),
+            ),
         
-        )
-    
-    
+        ui.nav(
+            "Run Analysis",
+            ui.input_numeric("n_CPU", "number of CPU cores to use", value=int(os.cpu_count()/2)),
+            ui.input_file("json_file_input", "Upload Json configuration File:"),
+            ui.input_selectize("select_analysis", "Choose Analysis to perform:", {"All":"All" ,
+                                                                               "Metadata":"Metadata",
+                                                                               "Sweep analysis": "Sweep analysis",
+                                                                               "Spike analysis":"Spike analysis",
+                                                                               "Firing analysis":"Firing analysis"
+                                                                               }, multiple=True, selected="All"),
+            ui.input_select("overwrite_existing_files", "Overwrite existing files?", ['Yes','No']),
+            
+            ui.input_action_button("run_analysis", "Run Analysis"),
+            ui.output_text_verbatim("script_output"),
+            ui.input_text(
+                "summary_folder_path",
+                "Enter Folder Path for Saving Summary tables file :",
+                placeholder="Enter full path to save the summary tables e.g., /path/to/folder/",
+            ),
+            ui.input_action_button("check_saving_summaryfolder", "Check Folder Path"),
+            
+            ui.output_ui("summary_folder_status"),
+            ui.input_action_button("summarise_analysis", "Summarize Analysis"),
+            ui.output_text_verbatim("summarize_analysis_output")),
+        
+        
+        
+        ui.nav(
+            "Cell Visualization",
+            ui.navset_pill_card(
+                # Encapsulate existing tabs into the "Cell Visualization" nav_pill
+                ui.nav(
+                    "Select Cell",
+                    ui.layout_sidebar(
+                        ui.panel_sidebar(
+                            ui.input_file("JSON_config_file", 'Choose JSON configuration files'),
+                            ui.input_selectize("Cell_file_select", "Select Cell to Analyse", choices=[]),
+                            ui.input_action_button('Update_cell_btn', 'Update Cell'),
+                        ),
+                        ui.panel_main(
+                            ui.output_table('config_json_table')
+                        ),
+                    ),
+                ),
+                ui.nav(
+                    "Cell Information",
+                    ui.layout_sidebar(
+                        ui.panel_sidebar(width=0),
+                        ui.panel_main(
+                            ui.navset_pill_card(
+                                ui.nav(
+                                    "Cell summary",
+                                    ui.row(
+                                        ui.column(2, ui.output_table("Cell_Metadata_table")),
+                                        ui.column(2, ui.output_table("Cell_linear_properties_table")),
+                                        ui.column(
+                                            4,
+                                            ui.output_table("Cell_Firing_properties_table"),
+                                            ui.output_table("Cell_Adaptation_table"),
+                                        ),
+                                    ),
+                                ),
+                                ui.nav(
+                                    "Linear properties",
+                                    ui.row(
+                                        ui.column(
+                                            4,
+                                            output_widget("cell_Holding_potential_v_Holding_current_plolty"),
+                                            output_widget("cell_SS_potential_v_stim_amp_plolty"),
+                                        ),
+                                        ui.column(
+                                            4,
+                                            output_widget("cell_input_resistance_v_stim_amp_plolty"),
+                                            output_widget('cell_time_constant_v_stim_amp_plolty'),
+                                        ),
+                                        ui.column(
+                                            4,
+                                            output_widget("cell_Holding_current_pA_v_stim_amp_plolty"),
+                                            output_widget("cell_Holding_potential_mV_v_stim_amp_plolty"),
+                                        ),
+                                    ),
+                                ),
+                                ui.nav(
+                                    "Processing report",
+                                    ui.output_table('cell_processing_time_table')
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+                ui.nav(
+                    "Sweep Analysis",
+                    ui.layout_sidebar(
+                        ui.panel_sidebar(
+                            ui.input_selectize("Sweep_selected", "Select Sweep to Analyse", choices=[]),
+                            ui.input_checkbox("BE_correction", "Correct for Bridge Error"),
+                            ui.input_checkbox("Superimpose_BE_Correction", "Superimpose BE Correction"),
+                            width=2
+                        ),
+                        ui.panel_main(
+                            ui.navset_tab(
+                                ui.nav(
+                                    "Sweep information",
+                                    ui.output_data_frame('Sweep_info_table')
+                                ),
+                                ui.nav(
+                                    'Spike Analysis',
+                                    output_widget('Sweep_spike_plotly'),
+                                    ui.output_data_frame('Sweep_spike_features_table')
+                                ),
+                                ui.nav(
+                                    "Spike phase plot",
+                                    ui.row(
+                                        ui.column(6, output_widget("Spike_superposition_plot")),
+                                        ui.column(6, output_widget("Spike_phase_plane_plot")),
+                                    ),
+                                ),
+                                ui.nav(
+                                    'Sweep_QC',
+                                    ui.output_table('Sweep_QC_table')
+                                ),
+                                ui.nav(
+                                    'Bridge Error analysis',
+                                    output_widget("BE_plotly"),
+                                    ui.output_text_verbatim("BE_value"),
+                                    ui.output_table('BE_conditions_table'),
+                                ),
+                                ui.nav(
+                                    'Linear properties analysis',
+                                    ui.output_table("linear_properties_conditions_table"),
+                                    ui.output_plot("linear_properties_fit"),
+                                    ui.output_table('linear_properties_fit_table'),
+                                    ui.output_table("linear_properties_table")
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+                ui.nav(
+                    "Firing Analysis",
+                    ui.layout_sidebar(
+                        ui.panel_sidebar(width=0),
+                        ui.panel_main(
+                            ui.navset_pill(
+                                ui.nav(
+                                    "I/O",
+                                    ui.input_select(
+                                        'Firing_response_type',
+                                        "Select response type",
+                                        choices=['Time_based', 'Index_based', 'Interval_based']
+                                    ),
+                                    output_widget("Time_based_IO_plotly"),
+                                    ui.row(
+                                        ui.column(2, ui.tags.b("Gain"), output_widget("Gain_regression_plot_time_based_Second")),
+                                        ui.column(2, ui.tags.b("Threshold"), output_widget("Threshold_regression_plot_Second")),
+                                        ui.column(2, ui.tags.b("Saturation Frequency"), output_widget("Saturation_Frequency_regression_plot_Second")),
+                                        ui.column(2, ui.tags.b("Saturation Stimulus"), output_widget("Saturation_Stimulus_regression_plot_Second")),
+                                        ui.column(2, ui.tags.b("Response Failure Frequency"), output_widget("Response_Failure_Frequency_regression_plot_Second")),
+                                        ui.column(2, ui.tags.b("Response Failure Stimulus"), output_widget("Response_Failure_Stimulus_regression_plot_Second"))
+                                    ),
+                                    ui.row(
+                                        ui.column(2, ui.output_table("Gain_regression_table_time_based_Second")),
+                                        ui.column(2, ui.output_table("Threshold_regression_table_Second")),
+                                        ui.column(2, ui.output_table("Saturation_Frequency_regression_Second")),
+                                        ui.column(2, ui.output_table("Saturation_Stimulus_regression_Second")),
+                                        ui.column(2, ui.output_table("Response_Fail_Frequency_regression_Second")),
+                                        ui.column(2, ui.output_table("Response_Fail_Stimulus_regression_Second"))
+                                    )
+                                ),
+                                ui.nav(
+                                    "Details",
+                                    ui.row(
+                                        ui.input_select(
+                                            'Firing_response_type_new',
+                                            'Select response type',
+                                            choices=["Time_based", "Index_based", "Interval_based"]
+                                        ),
+                                        ui.input_select('Firing_output_duration_new', 'Select response type', choices=[]),
+                                        ui.input_selectize('Plot_new', "Select plot to display", choices=[]),
+                                    ),
+                                    output_widget("Time_based_IO_plotly_new"),
+                                    ui.output_table("IO_fit_parameter_table")
+                                ),
+                                ui.nav(
+                                    "Adaptation",
+                                    ui.input_select('Adaptation_feature_to_display', "Select feature ", choices=[]),
+                                    output_widget("Adaptation_plotly"),
+                                    ui.output_table("Adaptation_table"),
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+                ui.nav(
+                    "In progress",
+                    ui.layout_sidebar(
+                        ui.panel_sidebar(
+                            ui.input_selectize("Sweep_selected_in_progress", "Select Sweep to Analyse", choices=[]),
+                            ui.input_selectize(
+                                "x_Spike_feature",
+                                "Select spike feature X axis",
+                                choices=['Downstroke', 'fAHP', 'Fast_Trough', 'Peak', 'Spike_heigth', 'Spike_width_at_half_heigth', 'Threshold', 'Trough', 'Upstroke']
+                            ),
+                            ui.input_selectize(
+                                "y_Spike_feature",
+                                "Select spike feature Y axis",
+                                choices=["Peak", 'Downstroke', 'fAHP', 'Fast_Trough', 'Spike_heigth', 'Spike_width_at_half_heigth', 'Threshold', 'Trough', 'Upstroke']
+                            ),
+                            ui.input_selectize("y_Spike_feature_index", "Which spike index for Y axis", choices=['N', "N-1", "N+1"]),
+                            ui.input_checkbox("BE_correction_in_process", "Correct for Bridge Error"),
+                            width=2
+                        ),
+                        ui.panel_main(
+                            ui.navset_pill(
+                                ui.nav(
+                                    "Spike feature correlation",
+                                    output_widget("Spike_features_index_correlation"),
+                                ),
+                            ),
+                            width=10
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    ),
 )
 
+def import_json_config_file(json_config_file):
+    i=0
+    for file in json_config_file:
+        file_path = file['datapath']
+        if i == 0:
+            config_df = ordifunc.open_json_config_file(file_path)
+            i+=1
+            
+        else:
+            new_table = ordifunc.open_json_config_file(file_path)
+            config_df=pd.concat([config_df, new_table],ignore_index = True)
+            
+    return config_df
 
+def estimate_processing_time(start_time, total_iteration,i):
+    process_time = time.time()-start_time
+    hours = math.floor(process_time / 3600)
+    minutes = math.floor((process_time % 3600) / 60)
+    seconds = int(process_time % 60)
+    formatted_time = f"{hours}:{minutes:02d}:{seconds:02d}"
+    
+    estimated_total_time = process_time*total_iteration/i
+    estimated_remaining_time = estimated_total_time-process_time
+    remaining_hours = math.floor(estimated_remaining_time / 3600)
+    remaining_minutes = math.floor((estimated_remaining_time % 3600) / 60)
+    remaining_seconds = int(estimated_remaining_time % 60)
+    remaining_formatted_time = f"{remaining_hours}:{remaining_minutes:02d}:{remaining_seconds:02d}"
+    
+    return formatted_time, remaining_formatted_time
 
 def highlight_late(s):
     
@@ -577,8 +775,697 @@ def get_feature_regression_plot_tables(cell_dict,response_type,feature):
 
 
 def server(input: Inputs, output: Outputs, session: Session):
-    print("coucou")
+    
 
+    
+    print("Hello World!")
+    
+    
+    ################# Create JSON configuration file
+    
+    
+    database_list = reactive.Value([])
+    db_done = reactive.Value([])
+    # Check for the first directory
+    @output
+    @render.ui
+    @reactive.event(input.check_dir_1)
+    def status_1():
+        full_path = input.json_file_path()
+        if not full_path:
+            return ui.HTML("<b>No path provided for Path 1.</b>")
+        
+        dir_path, file_name = os.path.split(full_path)
+        if os.path.isdir(dir_path):
+            if file_name.endswith(".json"):
+                if os.path.isfile(full_path):
+                    return ui.HTML(
+                        f"""<span style='color:green;'><b>Directory exists:</b> `{dir_path}`</span><br>
+                        <span style='color:red;'><b>File </b> {file_name} already exists </span>"""
+                    )
+                else:
+                    return ui.HTML(
+                        f"""<span style='color:green;'><b>Directory exists:</b> {dir_path}</span><br>
+                        <b>File will be saved as:</b> {file_name}"""
+                    )
+            else:
+                return ui.HTML(
+                    f"""<span style='color:green;'><b>Directory exists:</b> {dir_path}</span><br>
+                    <span style='color:red;'><b>Warning:</b> {file_name} does not have a .json extension.</span>
+                    """
+                )
+        else:
+            return ui.HTML(
+                f"""<span style='color:red;'><b>Directory does not exist:</b> {dir_path}</span>"""
+            )
+
+    # Check for the second directory
+    @output
+    @render.ui
+    @reactive.event(input.check_dir_2)
+    def status_2():
+        full_path = input.Saving_folder()
+        if not full_path:
+            return ui.HTML("<b>No path provided for Path 2.</b>")
+        
+
+        if os.path.isdir(full_path):
+            return ui.HTML(
+                f"""<span style='color:green;'><b>Directory exists:</b> {full_path}</span><br>"""
+            )
+            
+        else:
+            return ui.HTML(
+                f"""<span style='color:red;'><b>Directory does not exist:</b> {full_path}</span>"""
+            )
+        
+    # Check for the second directory
+    @output
+    @render.ui
+    @reactive.event(input.check_QC_file_path)
+    def status_QC_file():
+        
+        full_path = input.Path_to_QC_file()
+        if not full_path:
+            return ui.HTML("<b>No path provided for Quality Criteria file.</b>")
+        
+        dir_path, file_name = os.path.split(full_path)
+        if os.path.isfile(full_path):
+            if file_name.endswith(".py"): 
+                return ui.HTML(
+                    f"""<span style='color:green;'><b>Quality Criteria file:</b> `{full_path}` exists </span>"""
+                )
+            else:
+                return ui.HTML(
+                    f"""<span style='color:red;'><b>Warning:</b> {full_path} is not a python file.</span>
+                    """
+                )
+        else:
+            return ui.HTML(
+                f"""<span style='color:red;'><b>File :</b> {full_path} does not exist</span>"""
+            )
+
+
+    
+    @output
+    @render.ui
+    @reactive.event(input.Check_original_file_path)
+    def status_original_file_path():
+        original_file_path = input.original_file_path()
+        if not original_file_path:
+            return ui.HTML("<b>No path provided for original file path.</b>")
+        
+
+        if os.path.isdir(original_file_path):
+            return ui.HTML(
+                f"""<span style='color:green;'><b>Directory exists:</b> `{original_file_path}`</span>
+               """
+            )
+        else:
+            return ui.HTML(
+                f"""<span style='color:red;'><b>Directory does not exist:</b> {original_file_path}</span>"""
+            )
+        
+    @output
+    @render.ui
+    @reactive.event(input.check_database_python_script_path)
+    def status_database_script_file():
+        database_script_file = input.database_python_script_path()
+
+        if not database_script_file:
+            return ui.HTML("<b>No path provided for original file path.</b>")
+    
+        if os.path.isfile(database_script_file):
+            # When the directory exists, display a success message and a selectInput
+            
+            
+            return ui.HTML(f"""<span style='color:green;'><b>File: </b> `{database_script_file}` exists</span><br>""")
+            
+        else:
+            # When the directory doesn't exist, display an error message
+            return ui.HTML(
+                f"""<span style='color:red;'><b>File {database_script_file} does not exist:</span>"""
+            )
+    
+    @output
+    @render.ui
+    @reactive.event(input.check_database_python_script_path)
+    def import_database_script_file():
+        original_file_path = input.database_python_script_path()
+        
+        if not original_file_path:
+            return ui.HTML("<b>No path provided for original file path.</b>")
+    
+        if os.path.isfile(original_file_path):
+            # When the directory exists, display a success message and a selectInput
+            
+            with open(original_file_path, "r") as file:
+                tree = ast.parse(file.read(), filename=original_file_path)
+            
+                # Extract function names
+                functions = [node.name for node in ast.walk(tree) if isinstance(node, ast.FunctionDef)]
+
+            return ui.input_select(
+                "select_database_function", "Choose database's function", 
+                choices=functions  # Replace with dynamic options if needed
+            )
+    
+    # Check for the first directory
+    @output
+    @render.ui
+    @reactive.event(input.check_population_class_file_path)
+    def status_population_class_file():
+        full_path = input.population_class_file()
+        if not full_path:
+            return ui.HTML("<b>No path provided for Population class file.</b>")
+        
+        dir_path, file_name = os.path.split(full_path)
+        if os.path.isfile(full_path):
+            if file_name.endswith(".csv"): 
+                return ui.HTML(
+                    f"""<span style='color:green;'><b>Population class file:</b> `{full_path}` exists </span>"""
+                )
+            else:
+                return ui.HTML(
+                    f"""<span style='color:red;'><b>Warning:</b> {full_path} is not a csv.</span>
+                    """
+                )
+        else:
+            return ui.HTML(
+                f"""<span style='color:red;'><b>File :</b> {full_path} does not exist</span>"""
+            )
+        
+    # Check for the first directory
+    @output
+    @render.ui
+    @reactive.event(input.check_cell_sweep_table_file_path)
+    def status_cell_sweep_table_file():
+        full_path = input.cell_sweep_table_file()
+        if not full_path:
+            return ui.HTML("<b>No path provided for Cell Sweep table file.</b>")
+        
+        dir_path, file_name = os.path.split(full_path)
+        if os.path.isfile(full_path):
+            if file_name.endswith(".csv"): 
+                return ui.HTML(
+                    f"""<span style='color:green;'><b>Cell Sweep table file:</b> `{full_path}` exists </span>"""
+                )
+            else:
+                return ui.HTML(
+                    f"""<span style='color:red;'><b>Warning:</b> {full_path} is not a csv.</span>
+                    """
+                )
+        else:
+            return ui.HTML(
+                f"""<span style='color:red;'><b>File :</b> {full_path} does not exist</span>"""
+            )
+        
+        
+    # Add Database button action
+    @output
+    @render.ui
+    @reactive.event(input.Add_Database)
+    def add_database():
+        
+        
+        database_name = input.database_name()
+        if not database_name : 
+            return ui.HTML("<span style='color:red;'><b>Database Name must be provided</b></span>")
+    
+        original_file_path = input.original_file_path()
+        if not original_file_path : 
+            return ui.HTML("<span style='color:red;'><b>Folder of original files must be provided</b></span>")
+        if not original_file_path.endswith(os.path.sep):
+            original_file_path += os.path.sep
+        
+        path_to_db_script_folder = input.database_python_script_path()
+        if not path_to_db_script_folder : 
+            return ui.HTML("<span style='color:red;'><b>Path to database script must be provided</b></span>")
+        
+        database_script_path, database_script_file_name = os.path.split(path_to_db_script_folder)
+        if not database_script_path.endswith(os.path.sep):
+            database_script_path += os.path.sep
+        database_function = input.select_database_function()
+        if not database_function : 
+            return ui.HTML("<span style='color:red;'><b>Function name for database must be provided</b></span>")
+        
+        
+        database_population_class_file = input.population_class_file()
+        if not database_population_class_file : 
+            return ui.HTML("<span style='color:red;'><b>Population class file must be provided</b></span>")
+        
+        database_cell_sweep_table_file = input.cell_sweep_table_file()
+        if not database_cell_sweep_table_file : 
+            return ui.HTML("<span style='color:red;'><b>Cell Sweep table must be provided</b></span>")
+        
+        stimulus_provided = input.stimulus_time_provided()
+        stimulus_duration = input.stimulus_duration()
+        
+
+
+        # Store in the reactive dictionary
+        current_list = database_list()
+        current_db_done = db_done()
+        for i, d in enumerate(current_list):
+            if d.get("database_name") == database_name:
+                del current_list[i]
+                break  # Exit loop after removing the first match
+                
+        
+        db_list = {
+            "database_name" : database_name,
+            "original_file_directory" :original_file_path,
+            "path_to_db_script_folder" : database_script_path,
+            "python_file_name" :database_script_file_name,
+            'db_function_name':database_function,
+            "db_population_class_file" : database_population_class_file,
+            'db_cell_sweep_csv_file':database_cell_sweep_table_file,
+            "db_stimulus_duration" : float(stimulus_duration),
+            "stimulus_time_provided": stimulus_provided}
+        current_list.append(db_list)
+        current_db_done.append(database_name)
+        
+        
+        database_list.set(current_list)
+        db_done.set(current_db_done)
+
+        # Reset inputs manually by setting them to empty strings
+        ui.update_text("database_name", value="")
+        ui.update_text("original_file_path", value="")
+        ui.update_text('database_python_script_path', value = "")
+
+        ui.update_text("population_class_file", value="")
+        ui.update_text("cell_sweep_table_file", value="")
+        ui.update_numeric("stimulus_duration", value=0.5)
+
+        # Display the updated dictionary
+        return ui.HTML(f"<b>Updated Database Dictionary:</b><br><pre>{json.dumps(current_list, indent=4)}</pre>")
+    
+        
+    # Save JSON file if inputs are valid
+    @output
+    @render.ui
+    @reactive.event(input.save_json)
+    def save_json_status():
+        
+        DB_parameters = database_list()
+        json_file_path = input.json_file_path()
+        
+        if not json_file_path : 
+            return ui.HTML("<span style='color:red;'><b>Saving file for JSON config file must be provided</b></span>")
+        
+        
+        Saving_folder = input.Saving_folder()
+        
+        if not Saving_folder : 
+            return ui.HTML("<span style='color:red;'><b>Saving folder for analysis must be provided</b></span>")
+        
+        Path_to_QC_file = input.Path_to_QC_file()
+        if not Path_to_QC_file : 
+            return ui.HTML("<span style='color:red;'><b>Quality Criteria Python Script must be provided</b></span>")
+        
+        if not Saving_folder.endswith(os.path.sep):
+            Saving_folder += os.path.sep
+        
+        configuration_file = {
+            
+            'path_to_saving_file' :Saving_folder,
+            'path_to_QC_file' : Path_to_QC_file,
+            'DB_parameters':DB_parameters
+            }
+        
+        # Serializing json
+        configuration_file_json = json.dumps(configuration_file, indent=4)
+         
+        # Writing to sample.json
+        with open(json_file_path, "w") as outfile:
+            outfile.write(configuration_file_json)
+        
+        return ui.HTML(f"<span style='color:green;'><b>JSON file saved successfully to:</b> {json_file_path}</span>")
+        
+    ################## Run Analysis
+    
+        
+    @output
+    @render.text
+    @reactive.event(input.run_analysis)
+    def script_output():
+        # Get inputs
+        problem_cell = []
+
+        if not input.json_file_input():
+            return "No file uploaded."
+        else:
+            json_config_file = input.json_file_input()
+            
+            config_df = import_json_config_file(json_config_file)
+            
+            nb_of_workers_to_use = int(input.n_CPU())
+            if nb_of_workers_to_use == 0:
+                nb_of_workers_to_use = 1
+            
+            analysis_to_perform = input.select_analysis()
+            overwrite_cell_files_yes_no = input.overwrite_existing_files()
+            if overwrite_cell_files_yes_no == 'Yes':
+                overwrite_cell_files = True
+            elif overwrite_cell_files_yes_no == 'No':
+                overwrite_cell_files = False
+            
+            path_to_saving_file = config_df.loc[0,'path_to_saving_file']
+            path_to_QC_file = config_df.loc[0,'path_to_QC_file']
+            
+            for elt in config_df.index:
+                
+                current_db = config_df.loc[elt,:].to_dict()
+                database_name = current_db["database_name"]
+                path_to_python_folder = current_db["path_to_db_script_folder"]
+                
+                python_file=current_db['python_file_name']
+                module=python_file.replace('.py',"")
+                full_path_to_python_script=str(path_to_python_folder+python_file)
+                
+                spec=importlib.util.spec_from_file_location(module,full_path_to_python_script)
+                DB_module = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(DB_module)
+                
+                db_cell_sweep_file = pd.read_csv(current_db['db_cell_sweep_csv_file'],sep =',',encoding = "unicode_escape")
+                
+                cell_id_list = db_cell_sweep_file['Cell_id'].unique()
+                random.shuffle(cell_id_list)
+                
+                args_list = [[x,
+                              current_db,
+                              module,
+                              full_path_to_python_script,
+                              path_to_QC_file, 
+                              path_to_saving_file,
+                              overwrite_cell_files,
+                              analysis_to_perform] for x in cell_id_list]
+                
+                
+                start_time = time.time()
+                with ui.Progress(min=0, max=len(cell_id_list)) as progress:
+                    with concurrent.futures.ProcessPoolExecutor(max_workers=nb_of_workers_to_use) as executor:
+                        problem_cell_list = {executor.submit(analysis_pipeline.cell_processing, x): x for x in args_list}
+                        i=1
+                        for f in concurrent.futures.as_completed(problem_cell_list):
+                            cell_id_problem = f.result()
+                            if cell_id_problem is not None:
+                                problem_cell.append(cell_id_problem)
+                            
+                            
+                            
+                            formatted_time, remaining_formatted_time = estimate_processing_time(start_time, len(cell_id_list), i)
+
+                            
+                            
+                            progress.set(i, message=f"Processing {database_name}:", detail=f" {i}/{len(cell_id_list)};  Time spent: {formatted_time}, Estimated remaining time:{remaining_formatted_time}")
+                            i+=1
+                            
+
+
+                print(f'Database {database_name} processed')
+            
+            print('Done')
+            return f'Problem occured with cells : {problem_cell}'
+    
+    @output
+    @render.ui
+    @reactive.event(input.check_saving_summaryfolder)
+    def summary_folder_status():
+        full_path = input.summary_folder_path()
+        if not full_path:
+            return ui.HTML("<b>No path provided for Path 1.</b>")
+        
+        
+        if os.path.isdir(full_path):
+            return ui.HTML(
+                f"""<span style='color:green;'><b>Directory :</b> `{full_path}` exists</span>"""
+            )
+        else:
+            return ui.HTML(
+                f"""<span style='color:red;'><b>Directory :</b> `{full_path}` Doesn't exist</span>"""
+            )
+            
+    
+    @output
+    @render.text
+    @reactive.event(input.summarise_analysis)
+    def summarize_analysis_output():
+        if not input.json_file_input():
+            return "No file uploaded."
+        else:
+            json_config_file = input.json_file_input()
+            
+            config_json_file = import_json_config_file(json_config_file)
+            
+        saving_path = input.summary_folder_path()
+        if not saving_path.endswith(os.path.sep):
+            saving_path += os.path.sep
+
+        unit_line=pd.DataFrame(['--','--','--','Hz/pA','pA','Hz','pA','Hz', "pA"]).T
+        Full_feature_table=pd.DataFrame(columns=['Cell_id','Obs','I_O_NRMSE','Gain','Threshold','Saturation_Frequency','Saturation_Stimulus','Response_Fail_Frequency','Response_Fail_Stimulus','Response_type',"Output_Duration"])
+        
+        unit_fit_line = pd.DataFrame(['--','--','--','--','--','--', "--",'--']).T
+        Full_fit_table=pd.DataFrame(columns=['Cell_id','Obs','Hill_amplitude','Hill_coef', 'Hill_Half_cst','Hill_x0','Sigmoid_x0','Sigmoid_k','Response_type',"Output_Duration"])
+
+        cell_linear_values = pd.DataFrame(columns=['Cell_id','Input_Resistance_GOhms','Input_Resistance_GOhms_SD','Time_constant_ms','Time_constant_ms_SD', "Resting_potential_mV", 'Resting_potential_mV_SD'])
+        linear_values_unit = pd.DataFrame(['--','GOhms','GOhms','ms','ms','mV','mV']).T
+        linear_values_unit.columns=['Cell_id','Input_Resistance_GOhms','Input_Resistance_GOhms_SD','Time_constant_ms','Time_constant_ms_SD', "Resting_potential_mV", 'Resting_potential_mV_SD']
+        cell_linear_values = pd.concat([cell_linear_values,linear_values_unit],ignore_index=True)
+        
+        processing_time_table = pd.DataFrame(columns=['Cell_id','Processing_step','Processing_time'])
+        processing_time_unit_line = pd.DataFrame(['--','--','s']).T
+        processing_time_unit_line.columns=processing_time_table.columns
+        processing_time_table = pd.concat([processing_time_table,processing_time_unit_line],ignore_index=True)
+        
+        Adaptation_table = pd.DataFrame(columns = ["Cell_id", "Adaptation_Obs", "Adaptation_Instantaneous_Frequency_Hz",
+                                                   'Adaptation_Spike_width_at_half_heigth_s',
+                                                   "Adaptation_Spike_heigth_mV", 
+                                                   "Adaptation_Threshold_mV",
+                                                   'Adaptation_Upstroke_mV/s',
+                                                   "Adaptation_Peak_mV", 
+                                                   'Adaptation_Downstroke_mV/s',
+                                                   "Adaptation_Fast_Trough_mV",
+                                                   'Adaptation_fAHP_mV',
+                                                   'Adaptation_Trough_mV'])
+        Adaptation_table_unit_line = pd.DataFrame(["--","--","Index","Index","Index","Index","Index","Index","Index","Index","Index","Index"]).T
+        Adaptation_table_unit_line.columns = Adaptation_table.columns
+        Adaptation_table = pd.concat([Adaptation_table, Adaptation_table_unit_line],ignore_index = True)
+        problem_cell=[]
+        problem_df = pd.DataFrame(columns = ['Cell_id','Error_message'])
+        
+        Full_population_calss_table = pd.DataFrame()
+        
+        for line in config_json_file.index:
+            current_db_population_class_table = pd.read_csv(config_json_file.loc[line,'db_population_class_file'])
+            Full_population_calss_table= pd.concat([Full_population_calss_table,current_db_population_class_table],ignore_index = True)
+        Full_population_calss_table=Full_population_calss_table.astype({'Cell_id':'str'})
+        cell_id_list = Full_population_calss_table.loc[:,'Cell_id'].unique()
+        
+        i=1
+        start_time = time.time()
+        with ui.Progress(min=0, max=len(cell_id_list)) as progress:
+            for cell_id in cell_id_list:
+                try:
+                    current_DB = Full_population_calss_table.loc[Full_population_calss_table['Cell_id']==cell_id,'Database'].values[0]
+                    config_line = config_json_file.loc[config_json_file['database_name']==current_DB,:]
+                    cell_dict = ordifunc.read_cell_file_h5(str(cell_id),config_line,['Sweep analysis','Firing analysis','Processing_report', "Sweep QC"])
+                    sweep_info_table = cell_dict['Sweep_info_table']
+                    cell_fit_table = cell_dict['Cell_fit_table']
+                    cell_feature_table = cell_dict['Cell_feature_table']
+                    Processing_df = cell_dict['Processing_table']
+                    cell_adaptation_table = cell_dict['Cell_Adaptation']
+                    sweep_QC_table = cell_dict['Sweep_QC_table']
+                    sweep_info_QC_table = pd.merge(sweep_info_table, sweep_QC_table.loc[:,['Passed_QC', "Sweep"]], on = "Sweep")
+                    sub_sweep_info_QC_table = sweep_info_QC_table.loc[sweep_info_QC_table['Passed_QC'] == True,:]
+                    sub_sweep_info_QC_table['Protocol_id'] =  sub_sweep_info_QC_table['Protocol_id'].astype(str)
+                    
+                    sub_sweep_info_QC_table_SS_potential = sub_sweep_info_QC_table.dropna(subset=['SS_potential_mV'])
+                    SS_potential_mV_list = list(sub_sweep_info_QC_table_SS_potential.loc[:,'SS_potential_mV'])
+                    Stim_amp_pA_list = list(sub_sweep_info_QC_table_SS_potential.loc[:,'Stim_SS_pA'])
+                    
+
+                    IR_regression_fit = ordifunc.compute_cell_input_resistance(cell_dict)
+                    Cell_IR = IR_regression_fit[0]
+                    
+
+                    IR_SD = np.nanstd(sub_sweep_info_QC_table['Input_Resistance_GOhms'])
+                    if Cell_IR <=0:
+                        Cell_IR = np.nan
+                        IR_SD = np.nan
+                   
+                    Time_cst_mean, Time_cst_SD = ordifunc.compute_cell_time_constant(cell_dict)
+                    
+                    
+                    
+                    Resting_potential_mean, Resting_potential_SD = ordifunc.compute_cell_resting_potential(cell_dict)
+                    
+                    
+                    cell_linear_values_line = pd.DataFrame([str(cell_id),Cell_IR,IR_SD,Time_cst_mean,Time_cst_SD,Resting_potential_mean, Resting_potential_SD ]).T
+                    cell_linear_values_line.columns = ['Cell_id','Input_Resistance_GOhms','Input_Resistance_GOhms_SD','Time_constant_ms','Time_constant_ms_SD', "Resting_potential_mV", 'Resting_potential_mV_SD']
+                    cell_linear_values=pd.concat([cell_linear_values,cell_linear_values_line],ignore_index=True)
+                    
+                    response_duration_dictionnary={
+                        'Time_based':[.005, .010, .025, .050, .100, .250, .500],
+                        'Index_based':list(np.arange(2,18)),
+                        'Interval_based':list(np.arange(1,17))}
+
+                    if cell_fit_table.shape[0]==1:
+
+                        for response_type in response_duration_dictionnary.keys():
+                            output_duration_list=response_duration_dictionnary[response_type]
+                            for output_duration in output_duration_list:
+                                I_O_obs=cell_fit_table.loc[(cell_fit_table['Response_type']==response_type )& (cell_fit_table['Output_Duration']==output_duration),"I_O_obs"]
+                                if len(I_O_obs)!=0:
+                                    Gain,Threshold,Saturation_Frequency,Saturation_Stimulus,Response_Failure_Frequency,Response_Failure_Stimulus = np.array(cell_feature_table.loc[(cell_feature_table['Response_type']==response_type )&
+                                                                                                                                               (cell_feature_table['Output_Duration']==output_duration),
+                                                                                                                                        ["Gain","Threshold","Saturation_Frequency","Saturation_Stimulus","Response_Fail_Frequency", "Response_Fail_Stimulus"]]).tolist()[0]
+                                    I_O_obs=I_O_obs.tolist()[0]
+                                    
+                                    Hill_Half_cst, Hill_amplitude, Hill_coef, Hill_x0, Output_Duration, Response_type, Sigmoid_k,Sigmoid_x0 = np.array(cell_fit_table.loc[(cell_fit_table['Response_type']==response_type )&
+                                                                                                                                               (cell_fit_table['Output_Duration']==output_duration),
+                                                                                                                                        ["Hill_Half_cst", "Hill_amplitude", "Hill_coef", "Hill_x0", "Output_Duration", "Response_type", "Sigmoid_k","Sigmoid_x0"]]).tolist()[0]
+                                else:
+                                    I_O_obs="No_I_O_Adapt_computed"
+                                    empty_array = np.empty(6)
+                                    empty_array[:] = np.nan
+                                    Gain,Threshold,Saturation_Frequency,Saturation_Stimulus,Response_Failure_Frequency,Response_Failure_Stimulus = empty_array
+                                    
+                                    empty_array = np.empty(8)
+                                    empty_array[:] = np.nan
+                                    Hill_Half_cst, Hill_amplitude, Hill_coef, Hill_x0, Output_Duration, Response_type, Sigmoid_k,Sigmoid_x0 = empty_array
+                                
+                                    
+                                if Gain<=0:
+                                    Gain=np.nan
+
+                                    
+                                    
+                                new_line=pd.DataFrame([str(cell_id),I_O_obs,Gain,Threshold,Saturation_Frequency,Saturation_Stimulus,response_type,output_duration]).T
+                                new_line.columns=Full_feature_table.columns
+                                Full_feature_table = pd.concat([Full_feature_table,new_line],ignore_index=True)
+                                
+                                new_fit_line = pd.DataFrame([str(cell_id),I_O_obs,Hill_amplitude, Hill_coef, Hill_Half_cst, Hill_x0, Sigmoid_x0, Sigmoid_k, response_type, output_duration]).T
+                                new_fit_line.columns = Full_fit_table.columns
+                                Full_fit_table = pd.concat([Full_fit_table, new_fit_line], ignore_table = True)
+                                
+                                
+                    else:
+                        
+                        cell_feature_table = cell_feature_table.merge(
+                    cell_fit_table.loc[:,['I_O_obs','Response_type','Output_Duration','I_O_NRMSE']], how='inner', on=['Response_type','Output_Duration'])
+            
+                        cell_feature_table['Cell_id']=str(cell_id)
+                        cell_feature_table=cell_feature_table.rename(columns={"I_O_obs": "Obs"})
+                        cell_feature_table=cell_feature_table.reindex(columns=Full_feature_table.columns)
+                        Full_feature_table = pd.concat([Full_feature_table,cell_feature_table],ignore_index=True)
+                        
+                        cell_fit_table['Cell_id'] = str(cell_id)
+                        cell_fit_table=cell_fit_table.rename(columns={"I_O_obs": "Obs"})
+                        cell_fit_table=cell_fit_table.reindex(columns=Full_fit_table.columns)
+                        Full_fit_table = pd.concat([Full_fit_table, cell_fit_table], ignore_index = True)
+                        
+                    
+                    cell_adaptation_table_copy = cell_adaptation_table.copy()
+                    cell_adaptation_table_copy['Feature'] = cell_adaptation_table_copy.apply(lambda row: ordifunc.append_last_measure(row['Feature'], row['Measure']), axis=1)
+                    feature_dict = cell_adaptation_table_copy.set_index('Feature')['Adaptation_Index'].to_dict()
+                    
+                    result_df = pd.DataFrame([feature_dict])
+                    result_df = result_df.add_prefix('Adaptation_')
+                    result_df.loc[:,'Cell_id']=cell_id
+                    result_df.loc[:,'Obs']="--"
+                    result_df = result_df.rename(columns={'Adaptation_Instantaneous_Frequency_mV':"Adaptation_Instantaneous_Frequency_Hz", 
+                                                          "Obs":"Adaptation_Obs"})
+
+                    Adaptation_table = pd.concat([Adaptation_table, result_df], ignore_index=True)
+                    
+
+                    for step in Processing_df.loc[:,'Processing_step'].unique():
+                        sub_processing_table = Processing_df.loc[Processing_df['Processing_step']==step,:]
+                        sub_processing_table=sub_processing_table.reset_index()
+                        sub_processing_time = sub_processing_table.loc[0,"Processing_time"]
+                        sub_processing_time = float(sub_processing_time.replace("s",""))
+                        new_line = pd.DataFrame([cell_id,step,sub_processing_time]).T
+                        
+                        new_line.columns = processing_time_table.columns
+                        processing_time_table=pd.concat([processing_time_table,new_line],ignore_index=True,axis=0)
+                except:
+
+                    try:
+                        cell_dict = ordifunc.read_cell_file_h5(str(cell_id),config_line,['Processing_report'])
+                        
+                        Processing_df = cell_dict['Processing_table']
+                        for elt in Processing_df.index:
+                            if "Error" in Processing_df.loc[elt,'Warnings_encontered'] :
+                                new_line = pd.DataFrame([cell_id, Processing_df.loc[elt,'Warnings_encontered']]).T
+                                new_line.columns = problem_df.columns
+                                problem_df = pd.concat([problem_df, new_line], ignore_index=True)
+                                break
+                    except:
+
+                        problem_cell.append(cell_id)
+                
+                formatted_time, remaining_formatted_time = estimate_processing_time(start_time, len(cell_id_list), i)
+                progress.set(i, message="Processing ", detail=f" {i}/{len(cell_id_list)}; Time spent: {formatted_time}, Estimated remaining time:{remaining_formatted_time}")
+                i+=1
+                
+            for response_type in response_duration_dictionnary.keys():
+                output_duration_list=response_duration_dictionnary[response_type]
+                for output_duration in output_duration_list:
+                    
+                    new_table = pd.DataFrame(columns=['Cell_id','Obs','I_O_NRMSE','Gain','Threshold','Saturation_Frequency','Saturation_Stimulus','Response_Fail_Frequency','Response_Fail_Stimulus',])
+                    unit_line.columns=new_table.columns
+                    new_table = pd.concat([new_table,unit_line],ignore_index=True)
+                    
+                    sub_table=Full_feature_table.loc[(Full_feature_table['Response_type']==response_type)&(Full_feature_table['Output_Duration']==output_duration),]
+                    sub_table=sub_table.drop(['Response_type','Output_Duration'], axis=1)
+                    sub_table=sub_table.reindex(columns=new_table.columns)
+                    sub_table['Gain'] = sub_table['Gain'].where(sub_table['Gain'] >= 0, np.nan)
+                    
+                    new_table = pd.concat([new_table,sub_table],ignore_index=True)
+                    if len(new_table['Cell_id'].unique())!=new_table.shape[0]:
+                        return str('problem with table'+str(response_type)+'_'+str(output_duration))
+                    
+                    
+                    
+                    new_fit_table = pd.DataFrame(columns = ['Cell_id','Obs','Hill_amplitude','Hill_coef', 'Hill_Half_cst','Hill_x0','Sigmoid_x0','Sigmoid_k'])
+                    unit_fit_line.columns = new_fit_table.columns
+                    new_fit_table = pd.concat([new_fit_table, unit_fit_line], ignore_index = True)
+                    
+                    sub_fit_table = Full_fit_table.loc[(Full_fit_table['Response_type']==response_type)&(Full_fit_table['Output_Duration']==output_duration),]
+                    sub_fit_table = sub_fit_table.drop(['Response_type','Output_Duration'], axis=1)
+                    sub_fit_table = sub_fit_table.reindex(columns=new_fit_table.columns)
+                    new_fit_table = pd.concat([new_fit_table,sub_fit_table],ignore_index=True)
+                    
+                    
+                    if response_type == 'Time_based':
+                        output_duration*=1000
+                        output_duration=str(str(int(output_duration))+'ms')
+                    
+
+                    new_table.to_csv(f"{saving_path}Full_Feature_Table_{response_type}_{output_duration}.csv")
+                    
+                    
+                    if len(new_fit_table['Cell_id'].unique())!=new_fit_table.shape[0]:
+                        return str('problem with table'+str(response_type)+'_'+str(output_duration))
+                    
+                    new_fit_table.to_csv(f"{saving_path}Full_Fit_Table_{response_type}_{output_duration}.csv")
+                        
+            cell_linear_values.to_csv(str(saving_path+ 'Full_Cell_linear_values.csv')) 
+            
+            processing_time_table.to_csv(str(saving_path+'Full_Processing_Times.csv'))
+            Adaptation_table.to_csv(f'{saving_path}Full_Adaptation_Table_Time_based_500ms.csv')
+            problem_df.to_csv(f'{saving_path}Problem_report.csv')
+            for col in Full_population_calss_table.columns:
+                if "Unnamed" in col:
+                    Full_population_calss_table = Full_population_calss_table.drop(columns=[col])
+            Full_population_calss_table.to_csv(f'{saving_path}Full_Population_Class.csv')
+            print("Done")
+            return  f'Analysis Summary done. Problem with cells {problem_cell}'
+    
+    
+    ################## Cell Visualization 
     @reactive.Effect
     @reactive.event(input.JSON_config_file)
     def _():
@@ -719,7 +1606,7 @@ def server(input: Inputs, output: Outputs, session: Session):
             current_config_line = config_table[config_table['database_name'] == Database]
             cell_id=cell_id.replace('Cell_','')
             cell_id = cell_id.replace('.h5','')
-            print('herer',cell_id)
+
             #Full_TVC_table, Full_SF_dict_table, Full_SF_table, Metadata_table, sweep_info_table, Sweep_QC_table, cell_fit_table, cell_feature_table,Processing_report_df = ordifunc.read_cell_file_h5(cell_id, current_config_line,selection=["All"])
             cell_dict = ordifunc.read_cell_file_h5(cell_id, current_config_line,selection=["All"])
             return cell_dict
@@ -799,22 +1686,21 @@ def server(input: Inputs, output: Outputs, session: Session):
             Stim_amp_pA_list = list(sub_sweep_info_QC_table_SS_potential['Stim_SS_pA'])
             
             # Perform linear regression to get Input Resistance and intercept
-            IR_regression_fit = fir_an.linear_fit(Stim_amp_pA_list, SS_potential_mV_list)[0]
+            #IR_regression_fit = fir_an.linear_fit(Stim_amp_pA_list, SS_potential_mV_list)[0]
+            IR_regression_fit = ordifunc.compute_cell_input_resistance(cell_dict)
+            Cell_IR = IR_regression_fit[0]
             
-            sub_sweep_info_QC_table_Holding_potential = sub_sweep_info_QC_table.dropna(subset=['Holding_potential_mV'])
-            Holding_potential_mV = list(sub_sweep_info_QC_table_Holding_potential['Holding_potential_mV'])
-            Holding_current_list = list(sub_sweep_info_QC_table_Holding_potential['Holding_current_pA'])
+            Time_cst_mean, Time_cst_SD = ordifunc.compute_cell_time_constant(cell_dict)
+            Capacitance = Time_cst_mean/Cell_IR
             
-            # Perform linear regression to get slope and intercept
-            Resting_potential_regression_fit = fir_an.linear_fit(Holding_current_list, Holding_potential_mV)[1]
+            Resting_potential_mean, Resting_potential_SD = ordifunc.compute_cell_resting_potential(cell_dict)
             
-            Time_cst_mean = np.nanmean(sub_sweep_info_QC_table['Time_constant_ms'])
             
-            Capacitance = Time_cst_mean/IR_regression_fit
             
-            Linear_table = pd.DataFrame({'Input Resistance GΩ':[IR_regression_fit],
+            
+            Linear_table = pd.DataFrame({'Input Resistance GΩ':[Cell_IR],
                                          'Time constant ms' : [Time_cst_mean],
-                                         'Resting membrane potential mV' : [Resting_potential_regression_fit],
+                                         'Resting membrane potential mV' : [Resting_potential_mean],
                                          'Capacitance pF' : [Capacitance]})
             
             
@@ -2635,7 +3521,7 @@ def server(input: Inputs, output: Outputs, session: Session):
     @reactive.event(input.Update_cell_btn, input.Plot_new, input.Firing_output_duration_new)
     def Time_based_IO_plotly_new():
         if input.JSON_config_file() and input.Cell_file_select() and input.Plot_new():
-            print('JIFIferifjoreijforlRIIFIR')
+
             cell_dict=get_cell_tables()
             Cell_feature_table = cell_dict['Cell_feature_table']
             Full_SF_table = cell_dict['Full_SF_table']
@@ -2923,16 +3809,16 @@ def server(input: Inputs, output: Outputs, session: Session):
             Sweep_QC_table = cell_dict['Sweep_QC_table']
             if np.isnan(sweep_info_table.loc[sweep_info_table['Sweep']==input.Sweep_selected(),"Bridge_Error_GOhms"].values[0]) == False:
                 TVC_table = Full_TVC_table.loc[input.Sweep_selected(),"TVC"]
-                TVC_table = ordifunc.get_filtered_TVC_table(Full_TVC_table, input.Sweep_selected(), do_filter=False, filter=5., do_plot=False)
+                #TVC_table = ordifunc.get_filtered_TVC_table(Full_TVC_table, input.Sweep_selected(), do_filter=False, filter=5., do_plot=False)
                 stim_amp = sweep_info_table.loc[sweep_info_table['Sweep']==input.Sweep_selected(),"Stim_SS_pA"].values[0]
                 Stim_start_s = sweep_info_table.loc[sweep_info_table['Sweep']==input.Sweep_selected(),"Stim_start_s"].values[0]
                 Stim_end_s = sweep_info_table.loc[sweep_info_table['Sweep']==input.Sweep_selected(),"Stim_end_s"].values[0]
                 dict_plot = sw_an.estimate_bridge_error_test(TVC_table, stim_amp, Stim_start_s, Stim_end_s,do_plot=True)
-                
+
                 TVC_table = dict_plot['TVC_table']
                 #min_time_fit
-                min_time_fit = dict_plot['min_time_fit']
-                max_time_fit = dict_plot['max_time_fit']
+                min_time_current = dict_plot['min_time_current']
+                max_time_current = dict_plot['max_time_current']
                     # Transition_time
                 actual_transition_time = dict_plot["Transition_time"]
                 alpha_FT = dict_plot['alpha_FT']
@@ -2950,7 +3836,7 @@ def server(input: Inputs, output: Outputs, session: Session):
                 # Input_current_pA
                 pre_T_current = dict_plot["Input_current_pA"]["pre_T_current"]
                 post_T_current = dict_plot["Input_current_pA"]["post_T_current"]
-                sigmoid_fit_trace_table = dict_plot["Input_current_pA"]["Sigmoid_fit"]
+                current_trace_table = dict_plot["Input_current_pA"]["current_trace_table"]
                 
                 # Create subplots
                 fig = make_subplots(rows=5, cols=1,  shared_xaxes=True, subplot_titles=("Membrane Potential plot", "Input Current plot", "Membrane potential first derivative 1kHz LPF","Membrane potential second derivative 5kHz LPF","Input current derivative 5kHz LPF"), vertical_spacing=0.03)
@@ -2967,14 +3853,14 @@ def server(input: Inputs, output: Outputs, session: Session):
                 
                 # Input current plot
                 fig.add_trace(go.Scatter(x=TVC_table['Time_s'], y=TVC_table['Input_current_pA'], mode='lines', name='Input_current_trace', line=dict(color='black', width =1 )), row=2, col=1)
-                fig.add_trace(go.Scatter(x=sigmoid_fit_trace_table['Time_s'], y=sigmoid_fit_trace_table['Input_current_pA_Fit'], mode='lines', name="Sigmoid Fit To Current Trace",line=dict(color='#05a810')), row=2, col=1)
+                
                 fig.add_trace(go.Scatter(
-                    x=np.array(sigmoid_fit_trace_table.loc[(sigmoid_fit_trace_table["Time_s"]<=(min_time_fit+0.005))&(sigmoid_fit_trace_table["Time_s"]>=(min_time_fit)),"Time_s"]), 
-                    y=[pre_T_current]*len(np.array(sigmoid_fit_trace_table.loc[(sigmoid_fit_trace_table["Time_s"]<=(min_time_fit+0.005))&(sigmoid_fit_trace_table["Time_s"]>=(min_time_fit)),"Time_s"])), 
+                    x=np.array(current_trace_table.loc[(current_trace_table["Time_s"]<=(min_time_current+0.005))&(current_trace_table["Time_s"]>=(min_time_current)),"Time_s"]), 
+                    y=[pre_T_current]*len(np.array(current_trace_table.loc[(current_trace_table["Time_s"]<=(min_time_current+0.005))&(current_trace_table["Time_s"]>=(min_time_current)),"Time_s"])), 
                     mode='lines', name="Pre transition fit Median", line=dict(color="red")), row=2, col=1)
                 fig.add_trace(go.Scatter(
-                    x=np.array(sigmoid_fit_trace_table.loc[(sigmoid_fit_trace_table["Time_s"]<=(max_time_fit))&(sigmoid_fit_trace_table["Time_s"]>=(max_time_fit-0.005)),"Time_s"]), 
-                    y=[post_T_current]*len(np.array(sigmoid_fit_trace_table.loc[(sigmoid_fit_trace_table["Time_s"]<=(max_time_fit))&(sigmoid_fit_trace_table["Time_s"]>=(max_time_fit-0.005)),"Time_s"])), 
+                    x=np.array(current_trace_table.loc[(current_trace_table["Time_s"]<=(max_time_current))&(current_trace_table["Time_s"]>=(max_time_current-0.005)),"Time_s"]), 
+                    y=[post_T_current]*len(np.array(current_trace_table.loc[(current_trace_table["Time_s"]<=(max_time_current))&(current_trace_table["Time_s"]>=(max_time_current-0.005)),"Time_s"])), 
                     mode='lines', name="Post transition fit Median", line=dict(color='blue')), row=2, col=1)
                 fig.add_trace(go.Scatter(x=[actual_transition_time], y=[pre_T_current], mode='markers', name='pre_Transition_current', marker=dict(color='red', size = 8)), row=2, col=1)
                 fig.add_trace(go.Scatter(x=[actual_transition_time], y=[post_T_current], mode='markers', name='post_Transition_current', marker=dict(color='blue', size=8)), row=2, col=1)
@@ -3005,8 +3891,9 @@ def server(input: Inputs, output: Outputs, session: Session):
                                          mode='lines', name=f'alpha_FT = {round(alpha_FT,4)} mV/s/s', line=dict(color='darkred', dash='dash')), row=4, col=1)
                 fig.add_trace(go.Scatter(x=Fast_ring_time, y=[-alpha_FT]*len(Fast_ring_time),
                                          mode='lines', name=f'-alpha_FT = {round(-alpha_FT,4)} mV/s/s', line=dict(color='darkred', dash='dash')), row=4, col=1)
-                fig.add_trace(go.Scatter(x=[T_FT]*len(np.arange(min_V_double_dot_five_kHz, max_V_double_dot_five_kHz, 1.)), y=np.arange(min_V_double_dot_five_kHz, max_V_double_dot_five_kHz, 1.),
-                                         mode='lines', name=f'T_FT = {round(T_FT,4)}s', line=dict(color='darkred', dash='dash')), row=4, col=1)
+                if not np.isnan(T_FT):
+                    fig.add_trace(go.Scatter(x=[T_FT]*len(np.arange(min_V_double_dot_five_kHz, max_V_double_dot_five_kHz, 1.)), y=np.arange(min_V_double_dot_five_kHz, max_V_double_dot_five_kHz, 1.),
+                                             mode='lines', name=f'T_FT = {round(T_FT,4)}s', line=dict(color='darkred', dash='dash')), row=4, col=1)
 
                 # I_dot_5_kHz plot
                 fig.add_trace(go.Scatter(x=TVC_table['Time_s'], y=TVC_table['I_dot_five_kHz'], mode='lines', name='I_dot_5_kHz', line=dict(color='black', width = 1)), row=5, col=1)
@@ -3032,6 +3919,7 @@ def server(input: Inputs, output: Outputs, session: Session):
                 fig.update_yaxes(title_text="mV/ms", row=3, col=1)
                 fig.update_yaxes(title_text="mV/ms/ms", row=4, col=1)
                 fig.update_yaxes(title_text="pA/ms", row=5, col=1)
+
                 return fig
             
     @output

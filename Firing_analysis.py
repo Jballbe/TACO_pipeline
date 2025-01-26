@@ -26,6 +26,10 @@ class StimulusSpaceSamplingNotSparseEnough(Exception):
     """Exception raised when the stimulus space is not sampled sparsely enough"""
     pass
 
+class EmptyTrimmedPolynomialFit(Exception):
+    """Exception raised when the trimmed polynomial fit is empty"""
+    pass
+
 def compute_cell_features(Full_SF_table,cell_sweep_info_table,response_duration_dictionnary,sweep_QC_table):
     '''
     Compute cell I/O features, for a dictionnnary of response_type:output_duration.
@@ -312,6 +316,7 @@ def get_IO_features_NEW_TEST(original_stimulus_frequency_table,response_type, re
     if obs == 'Hill-Sigmoid':
 
         Descending_segment = True
+        
         feature_obs,Gain,Threshold,Saturation_frequency,Saturation_stimulation,IO_fail_stim, IO_fail_freq ,plot_list = extract_IO_features_NEW_TEST(original_stimulus_frequency_table,response_type, fit_model_table, Descending_segment, Legend, response_duration,cell_id = cell_id, do_plot = do_plot ,plot_list=plot_list, print_plot=print_plot)
     
     elif obs == 'Hill':
@@ -416,23 +421,33 @@ def fit_IO_relationship_NEW_TEST(original_stimulus_frequency_table,cell_id='--',
         #response_threshold = (np.nanmax(trimmed_stimulus_frequency_table.loc[:,"Frequency_Hz"])-np.nanmin(trimmed_stimulus_frequency_table.loc[:,"Frequency_Hz"]))/20
 
         #response_threshold = np.nanmax(trimmed_stimulus_frequency_table.loc[:,"Frequency_Hz"])/20
-        response_threshold = np.nanmax(trimmed_stimulus_frequency_table.loc[:,"Frequency_Hz"])/20
+        response_threshold_ascending = np.nanmax(trimmed_stimulus_frequency_table.loc[:,"Frequency_Hz"])/10
+        response_threshold_descending = np.nanmax(trimmed_stimulus_frequency_table.loc[:,"Frequency_Hz"])/2 
         
 
         trimmed_stimulus_frequency_table = trimmed_stimulus_frequency_table.reset_index(drop=True)
+        last_zero_response_ascending = np.nan
         for elt in trimmed_stimulus_frequency_table.index:
-            if trimmed_stimulus_frequency_table.loc[elt,"Frequency_Hz"] >= response_threshold:
-                N_theta_zero = elt
+            if trimmed_stimulus_frequency_table.loc[elt,"Frequency_Hz"] == 0.:
+                last_zero_response_ascending = elt
+            if trimmed_stimulus_frequency_table.loc[elt,"Frequency_Hz"] >= response_threshold_ascending:
+                n_ref = elt
                 break
-            N_theta_zero = np.nan
+            n_ref = np.nan
         
         for elt in trimmed_stimulus_frequency_table.index[::-1]:
-            if trimmed_stimulus_frequency_table.loc[elt,"Frequency_Hz"] >= response_threshold:
+            if trimmed_stimulus_frequency_table.loc[elt,"Frequency_Hz"] >= response_threshold_descending:
                 N_theta_one = elt
                 break
             N_theta_one = np.nan
             
-        trimmed_space_start = int(np.nanmax([0,int(N_theta_zero-1)]))
+        #Either trim fromthe last zero response before n_ref or if no zero response, from the last sweep before threshold(n_ref-1)
+        if np.isnan(last_zero_response_ascending):
+            N_theta_zero = int(n_ref-1)
+        else:
+            N_theta_zero = int(last_zero_response_ascending)
+            
+        trimmed_space_start = int(np.nanmax([0,N_theta_zero]))
         trimmed_space_end = int(np.nanmin([original_data_subset_QC.shape[0],int(N_theta_one+1)]))
         trimmed_stimulus_frequency_table = trimmed_stimulus_frequency_table.loc[trimmed_space_start:trimmed_space_end]
         
@@ -602,9 +617,24 @@ def fit_IO_relationship_NEW_TEST(original_stimulus_frequency_table,cell_id='--',
             A_max = 2*A_init
         else:
             A_max = 10*A_init
+        # print(extended_polynomial_fit_table)
+        # import matplotlib.pyplot as plt
+        # plt.plot(extended_polynomial_fit_table["Stim_amp_pA"],extended_polynomial_fit_table["Frequency_Hz"] )
+        # # Add points from trimmed_x_data and trimmed_y_data
+        # plt.scatter(original_x_data, original_y_data, color='black', marker='o', label='Data Points')
+        # plt.scatter(trimmed_x_data, trimmed_y_data, color='red', marker='o', label='Trimmed Points')
         
+        # # Optionally add labels, legend, and show the plot
+        # plt.xlabel("Stim_amp_pA")
+        # plt.ylabel("Frequency_Hz")
+        # plt.legend()
+        # plt.show()
         poly_up_table = extended_polynomial_fit_table.loc[(extended_polynomial_fit_table['First_Derivative']>0)&(extended_polynomial_fit_table['Stim_amp_pA']<stimulus_for_max_freq),:]
-
+        if poly_up_table.shape[0]==0:
+            raise EmptyTrimmedPolynomialFit("No Ascending portion of polynomial fit before maximum frequency")
+        
+        
+        
         if poly_up_table.loc[poly_up_table['Frequency_Hz']<=0,:].shape[0] > 0 or extended_poly_fit_diff[0] <= 0:
         # check if polynomial up fit intersects X_axis over the input space, so if there are any frequency lower than 0 
         #or check if the first derivative of the polynomial fit is negative at  the start of the stimulus space
@@ -623,6 +653,8 @@ def fit_IO_relationship_NEW_TEST(original_stimulus_frequency_table,cell_id='--',
         x0_max = x0_init
         
         mid_response = 0.5*poly_max
+        
+        
         
         if poly_min < 0.5*poly_max:
 
@@ -983,7 +1015,19 @@ def fit_IO_relationship_NEW_TEST(original_stimulus_frequency_table,cell_id='--',
           Fit_NRMSE = np.nan
           parameters_table = pd.DataFrame()
           return obs, Final_fit_extended, Final_Amp, Final_H_x0, Final_H_Half_cst, Final_H_Hill_coef, Final_S_x0, Final_S_k, Legend, Fit_NRMSE, plot_list, parameters_table
-
+    except EmptyTrimmedPolynomialFit as e:
+          obs = str(e)  # Capture the custom error message
+          Final_fit_extended = np.nan
+          Final_Amp = np.nan
+          Final_H_Hill_coef = np.nan
+          Final_H_Half_cst = np.nan
+          Final_H_x0 = np.nan
+          Final_S_x0 = np.nan
+          Final_S_k = np.nan
+          Legend = np.nan
+          Fit_NRMSE = np.nan
+          parameters_table = pd.DataFrame()
+          return obs, Final_fit_extended, Final_Amp, Final_H_x0, Final_H_Half_cst, Final_H_Hill_coef, Final_S_x0, Final_S_k, Legend, Fit_NRMSE, plot_list, parameters_table
     except (TypeError) as e:
           obs=str(e)
 
@@ -1337,7 +1381,7 @@ def plot_IO_fit(plot_list, plot_to_do, return_plot=False):
         
         passed_QC_table = original_data_table.loc[original_data_table['Passed_QC']==True,:]
         failed_QC_table = original_data_table.loc[original_data_table['Passed_QC']==False,:]
-        
+
         fig = go.Figure()
         
 
@@ -2666,7 +2710,7 @@ def compute_cell_adaptation_behavior(original_SF_table, original_cell_sweep_info
         interval_based_feature = collect_interval_based_features_test(SF_table, cell_sweep_info_table, sweep_QC_table, 0.5, feature, measure)
         
         current_obs, current_Adaptation_index, current_M, current_C, current_median_table, current_best_alpha, current_best_beta, current_best_gamma, current_RMSE = fit_adaptation_test(interval_based_feature, False)
-        
+
         new_line = pd.DataFrame([current_obs, feature, measure, current_Adaptation_index, current_M, current_C, current_best_alpha, current_best_beta, current_best_gamma, current_RMSE]).T
         new_line.columns = Adaptation_table.columns
         Adaptation_table = pd.concat([Adaptation_table, new_line], ignore_index = True)
@@ -2713,7 +2757,7 @@ def collect_interval_based_features_test(original_SF_table, original_cell_sweep_
    
 
     maximum_number_of_spikes = get_maximum_number_of_spikes_test(original_SF_table, original_cell_sweep_info_table, sweep_QC_table_inst, response_time)
-    
+
     if feature == "Instantaneous_Frequency":
         #start interval indexing at 0 --> first interval between spike 0 and spike 1
         new_columns=["Interval_"+str(i) for i in range((maximum_number_of_spikes))]
@@ -2725,7 +2769,7 @@ def collect_interval_based_features_test(original_SF_table, original_cell_sweep_
     
 
     SF_table = SF_table.reindex(SF_table.columns.tolist() + new_columns ,axis=1)
-
+    
     for current_sweep in sweep_list:
 
 
