@@ -1067,13 +1067,16 @@ def compute_cell_input_resistance(cell_dict):
     sub_sweep_info_QC_table = sweep_info_QC_table.loc[sweep_info_QC_table['Passed_QC'] == True,:]
     sub_sweep_info_QC_table['Protocol_id'] =  sub_sweep_info_QC_table['Protocol_id'].astype(str)
     
-    sub_sweep_info_QC_table_SS_potential = sub_sweep_info_QC_table.dropna(subset=['SS_potential_mV'])
-    SS_potential_mV_list = list(sub_sweep_info_QC_table_SS_potential.loc[:,'SS_potential_mV'])
-    Stim_amp_pA_list = list(sub_sweep_info_QC_table_SS_potential.loc[:,'Stim_SS_pA'])
+    Mean_IR = np.nanmean(sweep_info_QC_table.loc[:,'Input_Resistance_GOhms'])
+    SD_IR = np.nanstd(sweep_info_QC_table.loc[:,'Input_Resistance_GOhms'])
     
-    IR_regression_fit = fir_an.linear_fit(Stim_amp_pA_list, SS_potential_mV_list)
+    # sub_sweep_info_QC_table_SS_potential = sub_sweep_info_QC_table.dropna(subset=['SS_potential_mV'])
+    # SS_potential_mV_list = list(sub_sweep_info_QC_table_SS_potential.loc[:,'SS_potential_mV'])
+    # Stim_amp_pA_list = list(sub_sweep_info_QC_table_SS_potential.loc[:,'Stim_SS_pA'])
     
-    return IR_regression_fit
+    # IR_regression_fit = fir_an.linear_fit(Stim_amp_pA_list, SS_potential_mV_list)
+    
+    return Mean_IR, SD_IR
 
 def compute_cell_time_constant(cell_dict):
     '''
@@ -1208,11 +1211,11 @@ def create_summary_tables(config_json_file_path, saving_path):
             Stim_amp_pA_list = list(sub_sweep_info_QC_table_SS_potential.loc[:,'Stim_SS_pA'])
             
 
-            IR_regression_fit = compute_cell_input_resistance(cell_dict)
-            Cell_IR = IR_regression_fit[0]
+            Cell_IR, IR_SD = compute_cell_input_resistance(cell_dict)
+            
             
 
-            IR_SD = np.nanstd(sub_sweep_info_QC_table['Input_Resistance_GOhms'])
+            
             if Cell_IR <=0:
                 Cell_IR = np.nan
                 IR_SD = np.nan
@@ -1552,6 +1555,32 @@ def get_first_spike_features_hat(config_json_file):
     Full_spike_table = pd.concat([unit_line, Full_spike_table], ignore_index = True)
     
     return Full_spike_table
+
+
+def get_cells_sampling_freq(config_json_file):
     
+    result_list = []
+    for elt in config_json_file.index:
+        pop_class_table = pd.read_csv(config_json_file.loc[elt,"db_population_class_file"])
+        cell_id_list = pop_class_table.loc[:,"Cell_id"].unique()
+        current_db = config_json_file.loc[elt,"database_name"]
+        current_line = config_json_file.loc[config_json_file['database_name']==current_db,:]
+        for cell_id in tqdm.tqdm(cell_id_list,desc=f"Processing database : {current_db}"):
+            try:
+                cell_dict = read_cell_file_h5(str(cell_id), current_line,"Sweep analysis")
+                cell_sweep_info_table = cell_dict['Sweep_info_table']
+                sampling_freq = np.nanmean(cell_sweep_info_table.loc[:,"Sampling_Rate_Hz"])
+                result_df = pd.DataFrame([cell_id, current_db, sampling_freq]).T
+                result_df.columns = ['Cell_id', 'Database', 'Sampling_Frequency_Hz']
+                
+                result_list.append(result_df)
+
+            
+            except:
+                print(cell_id)
+    
+    full_result = pd.concat(result_list, ignore_index = True)
+    
+    return full_result
             
    

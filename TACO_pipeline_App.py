@@ -268,6 +268,9 @@ app_ui = ui.page_fluid(
                                         ),
                                     ),
                                 ),
+                                
+                                    
+                                    
                                 ui.nav(
                                     "Processing report",
                                     ui.output_table('cell_processing_time_table')
@@ -315,10 +318,13 @@ app_ui = ui.page_fluid(
                                 ),
                                 ui.nav(
                                     'Linear properties analysis',
-                                    ui.output_table("linear_properties_conditions_table"),
-                                    ui.output_plot("linear_properties_fit"),
-                                    ui.output_table('linear_properties_fit_table'),
-                                    ui.output_table("linear_properties_table")
+                                    #ui.output_table("linear_properties_conditions_table"),
+                                    ui.output_table("condition_table"),
+                                    ui.output_table("sweep_properties_table"),
+                                    ui.row(
+                                        output_widget("cell_Input_Resitance_analysis"),
+                                        ui.output_table("linear_properties_fit_table"),
+                                        output_widget("cell_Time_cst_analysis"))
                                 ),
                             ),
                         ),
@@ -446,7 +452,17 @@ def estimate_processing_time(start_time, total_iteration,i):
 
 def highlight_late(s):
     
-    return ['background-color: green' if s_ == True else 'background-color: red' if s_ ==False else 'background-color: white' for s_ in s]
+    return ['background-color: green' if s_ == "True" else 'background-color: red' if s_ =="False" else 'background-color: white' for s_ in s]
+
+def highlight_rmse_a(s):
+    # Check if the index is "A/RMSE" and apply the color condition
+    if s.name == "RMSE/A":
+        return ['background-color: green' if s.iloc[0] < 0.1 else 'background-color: red']
+    return ['']
+# Function to highlight cells
+def highlight_condition(s):
+    return ['background-color: green' if v else 'background-color: red' for v in s]
+
 
 def hex_to_RGB(hex_str):
     """ #FFFFFF -> [255,255,255]"""
@@ -553,7 +569,7 @@ def get_BE_value_and_table(cell_dict, sweep_id):
         stim_amp = sweep_info_table.loc[sweep_info_table['Sweep']==sweep_id,"Stim_SS_pA"].values[0]
         Stim_start_s = sweep_info_table.loc[sweep_info_table['Sweep']==sweep_id,"Stim_start_s"].values[0]
         Stim_end_s = sweep_info_table.loc[sweep_info_table['Sweep']==sweep_id,"Stim_end_s"].values[0]
-        BE_val, condition_table = sw_an.estimate_bridge_error_test(TVC_table, stim_amp, Stim_start_s, Stim_end_s,do_plot=False)
+        BE_val, condition_table = sw_an.estimate_bridge_error(TVC_table, stim_amp, Stim_start_s, Stim_end_s,do_plot=False)
         
         return BE_val, condition_table
         
@@ -1496,6 +1512,7 @@ def server(input: Inputs, output: Outputs, session: Session):
             sweep_list = list(Sweep_info_table.loc[:,"Sweep"])
             ui.update_selectize("Sweep_selected" ,choices=sweep_list)
             ui.update_selectize("Sweep_selected_in_progress" ,choices=sweep_list)
+            ui.update_selectize("Sweep_selected_Linear_analysis", choices = sweep_list)
             cell_fit_table = cells_dict["Cell_fit_table"]
             #cell_fit_table = cells[6]
             sub_cell_fit_table = cell_fit_table.loc[cell_fit_table['Response_type'] == 'Time_based',:]
@@ -1881,6 +1898,63 @@ def server(input: Inputs, output: Outputs, session: Session):
             
             return figure
 
+    @output
+    @render_widget
+    def cell_Input_Resitance_analysis():
+        
+        if input.Sweep_selected() :
+            Do_linear_analysis_table, TC_plot_dict, R_in_plot_dict, properties_table, TC_table = get_sweep_linear_properties()
+            R_in_plot = sw_an.plot_estimate_input_resistance_and_resting_potential(R_in_plot_dict, sampling_step = 1, TACO_App=True)
+            
+    
+            return R_in_plot
+    
+    
+    
+    @output
+    @render_widget
+    def cell_Time_cst_analysis():
+        
+        if input.Sweep_selected() :
+            Do_linear_analysis_table, TC_plot_dict, R_in_plot_dict, properties_table, TC_table = get_sweep_linear_properties()
+            TC_plotly = sw_an.plot_fit_membrane_time_cst_new(TC_plot_dict, TACO_App=True)
+
+            return TC_plotly
+        
+        
+    @output
+    @render.table
+    def condition_table():
+        
+        if input.Sweep_selected() :
+            Do_linear_analysis_table, TC_plot_dict, R_in_plot_dict, properties_table, TC_table = get_sweep_linear_properties()
+
+            styled_table = Do_linear_analysis_table.style.apply(highlight_condition, subset=pd.IndexSlice["Condition Respected", :])
+            
+            return styled_table
+        
+    @output
+    @render.table
+    def sweep_properties_table():
+        
+        if input.Sweep_selected() :
+            Do_linear_analysis_table, TC_plot_dict, R_in_plot_dict, properties_table, TC_table = get_sweep_linear_properties()
+            
+
+            return properties_table.T
+        
+    @output
+    @render.table()
+    def linear_properties_fit_table():
+        if input.Sweep_selected() :
+            Do_linear_analysis_table, TC_plot_dict, R_in_plot_dict, properties_table, TC_table  = get_sweep_linear_properties()
+            TC_table = TC_table.T
+            TC_table = TC_table.style.set_table_attributes('class="dataframe shiny-table table w-auto"').apply(highlight_rmse_a)
+            return TC_table
+        
+        
+        
+        
         
     @output
     @render_widget
@@ -2518,124 +2592,74 @@ def server(input: Inputs, output: Outputs, session: Session):
             
             Full_TVC_table = cell_dict['Full_TVC_table']
             Sweep_info_table = cell_dict['Sweep_info_table']
-            stim_start_time = Sweep_info_table.loc[Sweep_info_table['Sweep'] == current_sweep,'Stim_start_s'].values[0]
-            stim_end_time = Sweep_info_table.loc[Sweep_info_table['Sweep'] == current_sweep,'Stim_end_s'].values[0]
+            Stim_amp_pA = Sweep_info_table.loc[Sweep_info_table['Sweep'] == current_sweep,'Stim_amp_pA'].values[0]
+            time_cst = Sweep_info_table.loc[Sweep_info_table['Sweep'] == current_sweep,'Time_constant_ms'].values[0]
+            R_in = Sweep_info_table.loc[Sweep_info_table['Sweep'] == current_sweep,'Input_Resistance_GOhms'].values[0]
+            
+            stim_start = Sweep_info_table.loc[Sweep_info_table['Sweep'] == current_sweep,'Stim_start_s'].values[0]
+            stim_end = Sweep_info_table.loc[Sweep_info_table['Sweep'] == current_sweep,'Stim_end_s'].values[0]
             current_TVC_table= ordifunc.get_filtered_TVC_table(Full_TVC_table,current_sweep,do_filter=True,filter=5.,do_plot=False)
         
+            BE = Sweep_info_table.loc[current_sweep, "Bridge_Error_GOhms"]
+            TVC_table = current_TVC_table.copy()
+            #rely on BE corrected trace
+            TVC_table.loc[:,'Membrane_potential_mV'] = TVC_table.loc[:,'Membrane_potential_mV']-BE*TVC_table.loc[:,'Input_current_pA']
             
+        
+            TC_plot_dict = sw_an.fit_membrane_time_cst_new(TVC_table,stim_end+0.002,
+                                                              (stim_end+0.060),
+                                                              do_plot=True)
+            best_A,best_tau,SS_potential,RMSE = sw_an.fit_membrane_time_cst_new(TVC_table,stim_end+0.002,
+                                                                                             (stim_end+0.060),
+                                                                                             do_plot=False)
             
-            
-            voltage_spike_table=sp_an.identify_spike(np.array(current_TVC_table.Membrane_potential_mV),
-                                            np.array(current_TVC_table.Time_s),
-                                            np.array(current_TVC_table.Input_current_pA),
-                                            stim_start_time,
-                                            (stim_start_time+stim_end_time)/2,do_plot=False)
-            
-            if len(voltage_spike_table['Peak']) != 0:
-                is_spike = True
+            if np.isnan(best_tau):
+                transient_time = .030 
             else:
-                is_spike = False
+                transient_time = 3*best_tau
             
-            sub_test_TVC=current_TVC_table[current_TVC_table['Time_s']<=stim_start_time-.005].copy()
-            sub_test_TVC=sub_test_TVC[sub_test_TVC['Time_s']>=(stim_start_time-.200)]
+            R_in, resting_potential, holding_potential, SS_potential, R2 = sw_an.estimate_input_resistance_and_resting_potential(TVC_table, 
+                                                                                      stim_start, 
+                                                                                      stim_end, 
+                                                                                      best_tau, 
+                                                                                      do_plot = False)
             
-            CV_pre_stim=np.std(np.array(sub_test_TVC['Membrane_potential_mV']))/np.mean(np.array(sub_test_TVC['Membrane_potential_mV']))
+            R_in_plot_dict = sw_an.estimate_input_resistance_and_resting_potential(TVC_table, 
+                                                               stim_start, 
+                                                               stim_end, 
+                                                               best_tau, 
+                                                               do_plot = True)
             
-            sub_test_TVC=current_TVC_table[current_TVC_table['Time_s']<=(stim_end_time)].copy()
-            sub_test_TVC=sub_test_TVC[sub_test_TVC['Time_s']>=((stim_start_time+stim_end_time)/2)]
+            Do_linear_analysis, Do_linear_analysis_table = sw_an.check_criteria_linear_analysis(TVC_table,  stim_start, stim_end, transient_time, R2)
+            if Do_linear_analysis == False:
             
-            CV_second_half=np.std(np.array(sub_test_TVC['Membrane_potential_mV']))/np.mean(np.array(sub_test_TVC['Membrane_potential_mV']))
-            BE=Sweep_info_table.loc[current_sweep,"Bridge_Error_GOhms"]
-            stim_amp = Sweep_info_table.loc[current_sweep,"Stim_amp_pA"]
-            if (is_spike == True or
-                np.abs(Sweep_info_table.loc[current_sweep,"Stim_amp_pA"])<2.0 or
-                np.abs(CV_pre_stim) > 0.01 or 
-                np.abs(CV_second_half) > 0.01):
-                NRMSE = np.nan
-                best_A = np.nan
-                best_tau = np.nan,
+                
                 SS_potential = np.nan
-                holding_potential = np.nan
                 resting_potential = np.nan
-                time_cst = np.nan
-                R_in = np.nan
-                
-                
-            else:
-                best_A,best_tau,SS_potential,holding_potential,NRMSE=sw_an.fit_membrane_time_cst(current_TVC_table,
-                                                                                 stim_start_time,
-                                                                                 (stim_start_time+.300),do_plot=False)
-                
-                
-                if NRMSE > 0.3:
-                    SS_potential = np.nan
-                    resting_potential = np.nan
-                    holding_potential = np.nan
-                    R_in = np.nan
-                    time_cst = np.nan
-                    
-                    
-                else:
-                    Holding_current,SS_current = sw_an.fit_stimulus_trace(
-                        current_TVC_table, stim_start_time, stim_end_time, do_plot=False)[:2]
-                    
-                    
-                    R_in=((SS_potential-holding_potential)/stim_amp)-BE
-                    
-                    time_cst=best_tau*1e3 #convert s to ms
-                    resting_potential = holding_potential - (R_in+BE)*Holding_current
-                    
-                    
-                    
-            
-                    
-            linear_fit_plot=sw_an.fit_membrane_time_cst(current_TVC_table, stim_start_time, (stim_start_time+.300),do_plot=True)
-            
-            
-            # if Sweep_info_table.loc[current_sweep,"Bridge_Error_extrapolated"] == "True":
-                
-            #     is_extrapolated = "Extrapolated"
-            # else:
-            #     is_extrapolated = "Not extrapolated"
-            condition_table=pd.DataFrame([is_spike,
-                                          np.abs(Sweep_info_table.loc[current_sweep,"Stim_amp_pA"]),
-                                          #is_extrapolated,
-                                          np.abs(CV_pre_stim),
-                                          np.abs(CV_second_half),
-                                          NRMSE]).T
-            condition_table.columns=['Potential spike',"Stimulus_amplitude",'CV pre stim','CV second half','NRMSE']
-            condition_to_meet = pd.DataFrame(["No spike","|| ≤2pA", '|| < 0.01','|| <0.01', '< 0.3']).T
-            condition_to_meet.columns=['Potential spike',"Stimulus_amplitude",'CV pre stim','CV second half','NRMSE']
-            
-            stim_amp_cond_respected = False if np.abs(Sweep_info_table.loc[current_sweep,"Stim_amp_pA"])<2.0 else True
-            #BE_extra_cond_respected = False if is_extrapolated == "Extrapolated" else True   
-            CV_pre_stim_cond_respected = False if np.abs(CV_pre_stim) > 0.01 else True 
-            CV_second_half_cond_respected = False if np.abs(CV_second_half) > 0.01 else True
-            NRMSE_cond_respected = False if np.isnan(NRMSE)==True else False if NRMSE > 0.3 else True
-            
-            condition_respected = pd.DataFrame([not is_spike, stim_amp_cond_respected, CV_pre_stim_cond_respected, CV_second_half_cond_respected, NRMSE_cond_respected]).T
-            condition_respected.columns=['Potential spike',"Stimulus_amplitude",'CV pre stim','CV second half','NRMSE']
+                holding_potential = np.nan
 
-            condition_table = pd.concat([condition_to_meet,condition_table, condition_respected],axis=0, ignore_index=True)
-            condition_table.index=['condition to meet', 'result', 'condition respected']
+                R_in = np.nan
+                time_cst = np.nan
             
             linear_fit_table=pd.DataFrame([best_A,
                                           best_tau,
                                           SS_potential,
-                                          NRMSE])
-            linear_fit_table.index=['A','tau', 'C','NRMSE']
+                                          RMSE,
+                                          RMSE/best_A])
+            linear_fit_table.index=['A','tau', 'C','RMSE', "RMSE/A"]
             
             properties_table=pd.DataFrame([BE,
-                                          stim_amp,
+                                          Stim_amp_pA,
                                           holding_potential,
                                           resting_potential,
                                           R_in,
                                           time_cst
                                           ])
-            properties_table.index= ['Bridge Error', "Stimulus amplitude",'Holding potential mV', 'Resing Potential mV', 'Input Resistance GOhms', 'Time constant ms']
+            
+            properties_table.index= ['Bridge Error', "Stimulus amplitude pA",'Holding potential mV', 'Resting Potential mV', 'Input Resistance GOhms', 'Time constant ms']
             
             
-            return condition_table, linear_fit_plot, linear_fit_table, properties_table
+            return Do_linear_analysis_table, TC_plot_dict, R_in_plot_dict, properties_table, linear_fit_table
            
     
     @output
@@ -2676,14 +2700,7 @@ def server(input: Inputs, output: Outputs, session: Session):
             linear_fit_plot+=p9.xlim(stim_start_time-.1,stim_end_time+.1)
             return linear_fit_plot
         
-    @output
-    @render.table()
-    def linear_properties_fit_table():
-        if input.Sweep_selected() :
-            linear_fit_table = get_sweep_linear_properties()[2]
-
-            
-            return linear_fit_table.T
+    
         
     @output
     @render.table()
@@ -3813,7 +3830,7 @@ def server(input: Inputs, output: Outputs, session: Session):
                 stim_amp = sweep_info_table.loc[sweep_info_table['Sweep']==input.Sweep_selected(),"Stim_SS_pA"].values[0]
                 Stim_start_s = sweep_info_table.loc[sweep_info_table['Sweep']==input.Sweep_selected(),"Stim_start_s"].values[0]
                 Stim_end_s = sweep_info_table.loc[sweep_info_table['Sweep']==input.Sweep_selected(),"Stim_end_s"].values[0]
-                dict_plot = sw_an.estimate_bridge_error_test(TVC_table, stim_amp, Stim_start_s, Stim_end_s,do_plot=True)
+                dict_plot = sw_an.estimate_bridge_error(TVC_table, stim_amp, Stim_start_s, Stim_end_s,do_plot=True)
 
                 TVC_table = dict_plot['TVC_table']
                 #min_time_fit

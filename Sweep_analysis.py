@@ -10,13 +10,14 @@ import pandas as pd
 import numpy as np
 import plotnine as p9
 import scipy
-from lmfit.models import   Model, QuadraticModel, ExponentialModel, ConstantModel
+from lmfit.models import Model, QuadraticModel, ExponentialModel, ConstantModel
 from lmfit import Parameters
-from sklearn.metrics import mean_squared_error, root_mean_squared_error
+from sklearn.metrics import mean_squared_error, root_mean_squared_error, r2_score
 import importlib
 from plotly.subplots import make_subplots
 import plotly.graph_objects as go
 import traceback
+
 
 import Ordinary_functions as ordifunc
 import Spike_analysis as sp_an
@@ -73,6 +74,39 @@ def sweep_analysis_processing(cell_Full_TVC_table, cell_stim_time_table, nb_work
     cell_sweep_info_table.index = cell_sweep_info_table.loc[:, 'Sweep']
     cell_sweep_info_table.index = cell_sweep_info_table.index.astype(str)
     cell_sweep_info_table.index.name = 'Index'
+    
+    ### For sweeps whose Brige Error couldn't be estimated, extrapolate from neighboring traces (protocol_wise)
+    for current_Protocol in cell_sweep_info_table['Protocol_id'].unique():
+
+        reduced_cell_sweep_info_table = cell_sweep_info_table[
+            cell_sweep_info_table['Protocol_id'] == current_Protocol]
+        reduced_cell_sweep_info_table=reduced_cell_sweep_info_table.astype({"Trace_id":"int"})
+        reduced_cell_sweep_info_table=reduced_cell_sweep_info_table.sort_values(by=['Trace_id'])
+        BE_array = np.array(
+            reduced_cell_sweep_info_table['Bridge_Error_GOhms'])
+        sweep_array = np.array(reduced_cell_sweep_info_table['Sweep'])
+
+        nan_ind_BE = np.isnan(BE_array)
+
+        x = np.arange(len(BE_array))
+        if False in nan_ind_BE:
+
+            BE_array[nan_ind_BE] = np.interp(
+                x[nan_ind_BE], x[~nan_ind_BE], BE_array[~nan_ind_BE])
+
+        extrapolated_BE_Series = pd.Series(BE_array)
+        sweep_array = pd.Series(sweep_array)
+        extrapolated_BE_Series = pd.DataFrame(
+            pd.concat([sweep_array, extrapolated_BE_Series], axis=1))
+        extrapolated_BE_Series.columns = ['Sweep', 'Bridge_Error_GOhms']
+        extrapolated_BE = pd.concat(
+            [extrapolated_BE,extrapolated_BE_Series], ignore_index=True)
+
+
+    cell_sweep_info_table.pop('Bridge_Error_GOhms')
+
+    cell_sweep_info_table = cell_sweep_info_table.merge(
+        extrapolated_BE, how='inner', on='Sweep')
 
     
     
@@ -112,40 +146,10 @@ def sweep_analysis_processing(cell_Full_TVC_table, cell_stim_time_table, nb_work
     
     
     
-    ### For sweeps whose Brige Error couldn't be estimated, extrapolate from neighboring traces (protocol_wise)
+   
 
 
-    for current_Protocol in cell_sweep_info_table['Protocol_id'].unique():
-
-        reduced_cell_sweep_info_table = cell_sweep_info_table[
-            cell_sweep_info_table['Protocol_id'] == current_Protocol]
-        reduced_cell_sweep_info_table=reduced_cell_sweep_info_table.astype({"Trace_id":"int"})
-        reduced_cell_sweep_info_table=reduced_cell_sweep_info_table.sort_values(by=['Trace_id'])
-        BE_array = np.array(
-            reduced_cell_sweep_info_table['Bridge_Error_GOhms'])
-        sweep_array = np.array(reduced_cell_sweep_info_table['Sweep'])
-
-        nan_ind_BE = np.isnan(BE_array)
-
-        x = np.arange(len(BE_array))
-        if False in nan_ind_BE:
-
-            BE_array[nan_ind_BE] = np.interp(
-                x[nan_ind_BE], x[~nan_ind_BE], BE_array[~nan_ind_BE])
-
-        extrapolated_BE_Series = pd.Series(BE_array)
-        sweep_array = pd.Series(sweep_array)
-        extrapolated_BE_Series = pd.DataFrame(
-            pd.concat([sweep_array, extrapolated_BE_Series], axis=1))
-        extrapolated_BE_Series.columns = ['Sweep', 'Bridge_Error_GOhms']
-        extrapolated_BE = pd.concat(
-            [extrapolated_BE,extrapolated_BE_Series], ignore_index=True)
-
-
-    cell_sweep_info_table.pop('Bridge_Error_GOhms')
-
-    cell_sweep_info_table = cell_sweep_info_table.merge(
-        extrapolated_BE, how='inner', on='Sweep')
+    
     
 
 
@@ -305,75 +309,543 @@ def get_sweep_linear_properties(sweep_info_list):
     '''
     
     
-    TVC_table, sweep, stim_start, stim_end, BE_extrapolated, BE, stim_amp = sweep_info_list
-
-
+    original_TVC_table, sweep, stim_start, stim_end, BE_extrapolated, BE, stim_amp = sweep_info_list
+    TVC_table = original_TVC_table.copy()
+    #rely on BE corrected trace
+    TVC_table.loc[:,'Membrane_potential_mV'] = TVC_table.loc[:,'Membrane_potential_mV']-BE*TVC_table.loc[:,'Input_current_pA']
     
-    sub_test_TVC=TVC_table[TVC_table['Time_s']<=stim_start-.005].copy()
-    sub_test_TVC=sub_test_TVC=sub_test_TVC[sub_test_TVC['Time_s']>=(stim_start-.200)]
     
-    CV_pre_stim=np.std(np.array(sub_test_TVC['Membrane_potential_mV']))/np.mean(np.array(sub_test_TVC['Membrane_potential_mV']))
+    
+    
+    best_A,best_tau,SS_potential,RMSE = fit_membrane_time_cst_new(TVC_table,stim_end+0.002,
+                                                                                     (stim_end+0.060),
+                                                                                     do_plot=False)
+    
+    if RMSE/best_A > 0.1:
+        best_tau = np.nan
+    
+    #Check stability of traces
+    
+    if np.isnan(best_tau):
+        transient_time = .030 
+    else:
+        transient_time = 3*best_tau
+    
+   
+    R_in, resting_potential, holding_potential, SS_potential, R2 = estimate_input_resistance_and_resting_potential(TVC_table, 
+                                                                              stim_start, 
+                                                                              stim_end, 
+                                                                              best_tau, 
+                                                                              do_plot = False)
+    
+    Do_linear_analysis = check_criteria_linear_analysis(TVC_table,  stim_start, stim_end, transient_time, R2)[0]
+    
+    if Do_linear_analysis == False:
+    
+        
+        SS_potential = np.nan
+        resting_potential = np.nan
+        holding_potential = np.nan
 
+        R_in = np.nan
+        time_cst = np.nan
     
+    else:
+        
+            
+        Holding_current,SS_current = fit_stimulus_trace(
+            TVC_table, stim_start, stim_end, do_plot=False)[:2]
+        
+         
+        
+        
+        #R_in=((SS_potential-holding_potential)/stim_amp)-BE
+        
+        time_cst=best_tau*1e3 #convert s to ms
+        #resting_potential = holding_potential - (R_in+BE)*Holding_current
+
+        
+        
+            
+    sweep_line=pd.DataFrame([str(sweep),time_cst,R_in,holding_potential,SS_potential,resting_potential]).T        
+    sweep_line.columns=['Sweep',"Time_constant_ms", 'Input_Resistance_GOhms', 'Holding_potential_mV','SS_potential_mV','Resting_potential_mV']
+    
+    return sweep_line
+
+def check_criteria_linear_analysis(TVC_table, stim_start, stim_end, transient_time, R2):
     
     
     voltage_spike_table = sp_an.identify_spike(np.array(TVC_table.Membrane_potential_mV),
                                     np.array(TVC_table.Time_s),
                                     np.array(TVC_table.Input_current_pA),
                                     stim_start,
-                                    (stim_start+stim_end)/2,do_plot=False)
-    if len(voltage_spike_table['Peak']) != 0:
-        is_spike = True
-    else:
-        is_spike = False
+                                    stim_end,
+                                    do_plot=False)
     
-    sub_test_TVC=TVC_table[TVC_table['Time_s']<=(stim_end)].copy()
-    sub_test_TVC=sub_test_TVC[sub_test_TVC['Time_s']>=((stim_start+stim_end)/2)]
     
-    CV_second_half=np.std(np.array(sub_test_TVC['Membrane_potential_mV']))/np.mean(np.array(sub_test_TVC['Membrane_potential_mV']))
+    OFF_pre_stim_table = TVC_table.loc[(TVC_table['Time_s'] <= stim_start - 0.005),:]
+    OFF_post_stim_table = TVC_table.loc[(TVC_table['Time_s'] >= stim_end + transient_time),:]
+    
+    OFF_table = pd.concat([OFF_pre_stim_table, OFF_post_stim_table], ignore_index = True)
+    
+    ON_table = TVC_table.loc[(TVC_table['Time_s'] >= stim_start + transient_time) & (TVC_table['Time_s'] <= stim_end - 0.005),:]
+    
+    I_bar_OFF = np.nanmean(OFF_table.loc[:,'Input_current_pA'])
+    I_std_OFF = np.nanstd(OFF_table.loc[:,'Input_current_pA'])
+    
+    I_bar_ON = np.nanmean(ON_table.loc[:,'Input_current_pA'])
+    I_std_ON = np.nanstd(ON_table.loc[:,'Input_current_pA'])
+    
+    V_bar_OFF = np.nanmean(OFF_table.loc[:,'Membrane_potential_mV'])
+    V_std_OFF = np.nanstd(OFF_table.loc[:,'Membrane_potential_mV'])
+    
+    V_bar_ON = np.nanmean(ON_table.loc[:,'Membrane_potential_mV'])
+    V_std_ON = np.nanstd(ON_table.loc[:,'Membrane_potential_mV'])
+    
+    condition_line = pd.DataFrame(["No spike",
+                                   'max(V_on_std, V_off_std)/abs(V_on_mean-V_off_mean) ≤ 0.2',
+                                   'max(I_on_std, I_off_std)/abs(I_on_mean-I_off_mean) ≤ 0.3',
+                                   'abs(I_on_mean - I_off_mean) ≥ 40 pA',
+                                   "abs(I_off_mean) ≤ 50 pA",
+                                   "IR_R^2 ≥ 0.8"]).T
+    
+    
+    measure_line = pd.DataFrame([str(len(voltage_spike_table['Peak'])),
+                                 str(np.round((np.nanmax([V_std_OFF, V_std_ON]) / abs((V_bar_OFF - V_bar_ON))),2)),
+                                 str(np.round(np.nanmax([I_std_OFF, I_std_ON]) / abs((I_bar_OFF - I_bar_ON)),2)),
+                                 str(np.round(abs((I_bar_OFF - I_bar_ON)),2)),
+                                 str(np.round(abs(I_bar_OFF),2)),
+                                 str(np.round(R2,2))
+                                 ]).T
+    
+    condition_respected_line = pd.DataFrame([len(voltage_spike_table['Peak']) ==0,
+                                 (np.nanmax([V_std_OFF, V_std_ON]) / abs((V_bar_OFF - V_bar_ON))) <= 0.2,
+                                 (np.nanmax([I_std_OFF, I_std_ON]) / abs((I_bar_OFF - I_bar_ON))) <= 0.3,
+                                 abs((I_bar_OFF - I_bar_ON)) >= 40.0,
+                                 abs(I_bar_OFF) <= 50.0,
+                                 R2 >= 0.8]).T
+    
+    condition_table = pd.concat([measure_line, condition_respected_line])
+    condition_table.columns = condition_line.iloc[0]
+    condition_table.index = ["Measure", "Condition Respected"]
+    
+    
+    # Check if all conditions are True
+    all_conditions_met = condition_respected_line.all(axis=1).iloc[0]
+    return all_conditions_met, condition_table
+    
+    
+    
+    
     
     
 
-    if (is_spike == True or
-        np.abs(stim_amp)<2.0 or
-        np.abs(CV_pre_stim) > 0.01 or 
-        np.abs(CV_second_half) > 0.01):
+def fit_membrane_time_cst_new (original_TVC_table,start_time,end_time,do_plot=False):
+    '''
+    Fit decaying time constant model to membrane voltage trace
+
+    Parameters
+    ----------
+    original_TVC_table : pd.DataFrame
+        Contains the Time, voltage, Current and voltage 1st and 2nd derivatives arranged in columns.
+        
+    start_time : Float
+        Start time of the window to consider.
+        
+    end_time : Float
+        End time of the window to consider.
+        
+    do_plot : Boolean, optional
+        Do plot. The default is False.
+
+    Returns
+    -------
+    best_A, best_tau, best_C : Float
+        Fitting results
+        
+    membrane_resting_voltage : Float
+        
+    NRMSE : Float
+        Godness of fit.
+
+    '''
+    try:
+        TVC_table=original_TVC_table.copy()
+        
+        sub_TVC_table=TVC_table[TVC_table['Time_s']<=(end_time)]
+        sub_TVC_table=sub_TVC_table[sub_TVC_table['Time_s']>=(start_time)]
         
 
-        SS_potential = np.nan
-        resting_potential = np.nan
-        holding_potential = np.nan
-        R_in = np.nan
-        time_cst = np.nan
+        normalized_time_sub_TVC_table = sub_TVC_table.copy()
+        normalize_time = np.nanmin(normalized_time_sub_TVC_table.loc[:,"Time_s"])
+        normalized_time_sub_TVC_table.loc[:,"Time_s"] -= normalize_time
+        normalized_time_sub_TVC_table = normalized_time_sub_TVC_table.reset_index(drop=True)
         
-    
-    else:
+        x_data=np.array(normalized_time_sub_TVC_table.loc[:,'Time_s'])
+        y_data=np.array(normalized_time_sub_TVC_table.loc[:,"Membrane_potential_mV"])
+        
 
-        best_A,best_tau,SS_potential,holding_potential,NRMSE = fit_membrane_time_cst(TVC_table,
-                                                                         stim_start,
-                                                                         (stim_start+.300),do_plot=False)
+        normalized_start_time = x_data[0]
+        normalized_end_time = x_data[-1]
+        
+        normalized_start_time = start_time-np.nanmin(sub_TVC_table.loc[:,"Time_s"])
+        normalized_end_time = end_time-np.nanmin(sub_TVC_table.loc[:,"Time_s"])
+        
+        
+        start_idx = np.argmin(abs(x_data - normalized_start_time))
+        end_idx = np.argmin(abs(x_data - normalized_end_time))
+        
+        
 
-        if NRMSE > 0.3 or np.isnan(NRMSE) == True:
-            SS_potential = np.nan
-            resting_potential = np.nan
+        mid_idx=int((end_idx+start_idx)/2)
+        initial_membrane_SS=np.median(y_data[mid_idx:end_idx])
+        
+        x_0=normalized_start_time
+        y_0=y_data[0]
 
-            R_in = np.nan
-            time_cst = np.nan
+
+
+
+        
+        initial_A = y_0-y_data[-1]
+        
+        
+        
+        if (y_data[mid_idx]-initial_membrane_SS)/(initial_A) <=0:
+            membrane_delta = initial_membrane_SS-y_0
+        
+            
+            initial_voltage_time_cst = y_0+(2/3)*membrane_delta
+
+            initial_voltage_time_cst_idx = np.argmin(abs(y_data[start_idx:end_idx] - initial_voltage_time_cst))+start_idx
+            initial_time_cst = x_data[initial_voltage_time_cst_idx]
             
         else:
-            Holding_current,SS_current = fit_stimulus_trace(
-                TVC_table, stim_start, stim_end, do_plot=False)[:2]
+            initial_time_cst = -x_data[mid_idx]/(np.log((y_data[mid_idx]-initial_membrane_SS)/(initial_A)))
+        
+
+       
+            
+        membrane_time_cst_model=Model(time_cst_model)
+       
+        membrane_time_cst_model_pars=Parameters()
+        
+        membrane_time_cst_model_pars.add('A',value=initial_A)
+        membrane_time_cst_model_pars.add('tau',value=initial_time_cst)
+        membrane_time_cst_model_pars.add('C',value=initial_membrane_SS)
+        
+        membrane_time_cst_out=membrane_time_cst_model.fit(y_data, membrane_time_cst_model_pars, x=x_data)        
+
+        best_A=membrane_time_cst_out.best_values['A']
+        best_tau=membrane_time_cst_out.best_values['tau']
+        best_C=membrane_time_cst_out.best_values['C']
+        
+        parameters_table = fir_an.get_parameters_table(membrane_time_cst_model_pars, membrane_time_cst_out)
+
+        simulation=time_cst_model(x_data,best_A,best_tau,best_C)
+        sim_table=pd.DataFrame(np.column_stack((x_data,simulation)),columns=["Time_s","Membrane_potential_mV"])
+        
+        RMSE = root_mean_squared_error(y_data, simulation)
+        
+
+
+        
+        
+        if do_plot==True:
+            sim_table.loc[:,'Time_s']+=normalize_time
+            
+            plot_dict = {"TVC_table" : TVC_table,
+                         "Sim_table" : sim_table,
+                         "A":best_A,
+                         "tau":best_tau,
+                         "C" : best_C,
+                        "RMSE":RMSE, 
+                        "start_time":start_time,
+                        "end_time":end_time}
             
             
-            R_in=((SS_potential-holding_potential)/stim_amp)-BE
-            
-            time_cst=best_tau*1e3 #convert s to ms
-            resting_potential = holding_potential - (R_in+BE)*Holding_current
-            
-    sweep_line=pd.DataFrame([str(sweep),time_cst,R_in,holding_potential,SS_potential,resting_potential]).T        
-    sweep_line.columns=['Sweep',"Time_constant_ms", 'Input_Resistance_GOhms', 'Holding_potential_mV','SS_potential_mV','Resting_potential_mV']
     
-    return sweep_line
+            #print(my_plot)
+            return plot_dict
+        
+        if best_tau > .080 or best_tau < .0029:
+            raise Tau_Outside_Range_Error(f"Resulting tau is lower than 2.9 ms or higher than 80 ms.")
+            
+        # if best_A/RMSE > 0.1:
+        #     raise Error_too_High(f"A/RMSE = {best_A/RMSE} > 0.1 ")
+
+        
+        return best_A,best_tau,best_C,RMSE
+    except (TypeError):
+        best_A=np.nan
+        best_tau=np.nan
+        best_C=np.nan
+        RMSE=np.nan
+        return best_A,best_tau,best_C,RMSE
+    
+    except Tau_Outside_Range_Error as e:
+        best_A=np.nan
+        best_tau=np.nan
+        best_C=np.nan
+        RMSE=np.nan
+        return best_A,best_tau,best_C,RMSE
+    
+    # except Error_too_High as e:
+    #     best_A=np.nan
+    #     best_tau=np.nan
+    #     best_C=np.nan
+    #     RMSE=np.nan
+    #     return best_A,best_tau,best_C,RMSE
+        
+    except(ValueError):
+        best_A=np.nan
+        best_tau=np.nan
+        best_C=np.nan
+        RMSE=np.nan
+        return best_A,best_tau,best_C,RMSE
+    
+def plot_fit_membrane_time_cst_new(plot_dict, TACO_App = False):
+    
+
+
+    # Extract values from plot_dict
+    TVC_table = plot_dict["TVC_table"]
+    Sim_table = plot_dict["Sim_table"]
+    A = plot_dict["A"]
+    tau = plot_dict["tau"]
+    C = plot_dict["C"]
+    RMSE = plot_dict["RMSE"]
+    start_time = plot_dict["start_time"]
+    end_time = plot_dict["end_time"]
+    
+    # Determine line style for the red line
+    line_style = "solid" if RMSE / A <= 0.1 else "dash"
+    
+    # Create figure
+    fig = go.Figure()
+    
+    # Add black line from TVC_table
+    fig.add_trace(go.Scatter(
+        x=TVC_table["Time_s"],
+        y=TVC_table["Membrane_potential_mV"],
+        mode='lines',
+        line=dict(color='black'),
+        name='Experimental Data'
+    ))
+
+    
+    # Add red line from Sim_table with hover text
+    hover_text = [f"A={np.round(A,3)}<br>tau={np.round(tau,4)}<br>C={np.round(C,3)}<br>RMSE={np.round(RMSE,3)}"] * len(Sim_table)
+    fig.add_trace(go.Scatter(
+        x=Sim_table["Time_s"],
+        y=Sim_table["Membrane_potential_mV"],
+        mode='lines',
+        line=dict(color='red', dash=line_style),
+        name='Simulation',
+        hoverinfo='text',
+        text=hover_text
+    ))
+    
+    # Set x-axis zoom range
+    fig.update_xaxes(range=[start_time - 0.01, end_time + 0.01], title_text="Time (s)")
+    
+    # Set y-axis label
+    fig.update_yaxes(title_text="Membrane Potential (mV)")
+    
+    # Update layout
+    fig.update_layout(
+        showlegend=False,
+        height=600, width=900
+    )
+    
+    if TACO_App:
+        return fig
+    else:
+        # Show figure
+        fig.show()
+
+
+def estimate_input_resistance_and_resting_potential(original_TVC_table, stim_start_time, stim_end_time, membrane_time_constant, do_plot = False):
+    
+    TVC_table = original_TVC_table.copy()
+    if np.isnan(membrane_time_constant):
+        transient_time = .030 
+    else:
+        transient_time = 3*membrane_time_constant
+    
+    # start_time = TVC_table["Time_s"].min() + 0.020
+    # end_time = TVC_table["Time_s"].max() - 0.020
+    
+    # TVC_table = TVC_table[(TVC_table["Time_s"] >= start_time) & (TVC_table["Time_s"] <= end_time)]
+    
+    Pre_stim_start_table = TVC_table.loc[(TVC_table['Time_s'] <= stim_start_time-0.005),:]
+    During_stim_table = TVC_table.loc[(TVC_table['Time_s'] >= stim_start_time+transient_time)&(TVC_table['Time_s'] <= stim_end_time-0.005),:]
+    Post_stim_end_table =  TVC_table.loc[(TVC_table['Time_s'] >= stim_end_time+transient_time),:]
+    
+    Fitted_TCV_table = pd.concat([Pre_stim_start_table, During_stim_table, Post_stim_end_table], ignore_index = True)
+    
+    IR, V_rest = fir_an.linear_fit(np.array(Fitted_TCV_table.loc[:,'Input_current_pA']),
+                                                       np.array(Fitted_TCV_table.loc[:,'Membrane_potential_mV']))
+    
+    pred_voltage = IR*np.array(Fitted_TCV_table.loc[:,'Input_current_pA']) + V_rest
+    R2 = r2_score(np.array(Fitted_TCV_table.loc[:,'Membrane_potential_mV']), pred_voltage)
+    
+    
+    holding_potential = np.nanmedian(Pre_stim_start_table.loc[:,'Membrane_potential_mV'])
+    SS_potential = np.nanmedian(During_stim_table.loc[:,'Membrane_potential_mV'])
+    
+    Holding_current,SS_current = fit_stimulus_trace(
+        TVC_table, stim_start_time, stim_end_time, do_plot=False)[:2]
+     
+    
+    current_step = SS_current - Holding_current
+    
+    if do_plot == True:
+        
+        plot_dict = {"Full_TVC_table":TVC_table,
+                         "Pre_stim_start_table" : Pre_stim_start_table,
+                         "During_stim_table" : During_stim_table,
+                         "Post_stim_end_table" : Post_stim_end_table,
+                         "IR" : IR ,
+                         "V_rest" : V_rest, 
+                         "R2" : R2, 
+                         "current_step" : current_step}
+        return plot_dict
+    
+    if  np.abs(current_step) < 40.0 or R2 < 0.8:
+        IR = np.nan
+        V_rest = np.nan
+    
+    
+    return IR, V_rest, holding_potential, SS_potential, R2
+    
+    
+def plot_estimate_input_resistance_and_resting_potential(plot_dict, sampling_step = 5, TACO_App = False):
+    
+    
+    Full_TVC_table = plot_dict["Full_TVC_table"]
+    Pre_stim_start_table = plot_dict["Pre_stim_start_table"]
+    During_stim_table = plot_dict['During_stim_table']
+    Post_stim_end_table = plot_dict['Post_stim_end_table']
+    IR = plot_dict['IR']
+    V_rest = plot_dict['V_rest']
+    R2 = plot_dict['R2']
+    current_step = plot_dict['current_step']
+    
+    Full_fitted_table = pd.concat([Pre_stim_start_table, During_stim_table, Post_stim_end_table], ignore_index = True)
+    Pre_stim_start_table = plot_dict["Pre_stim_start_table"].iloc[::sampling_step, :]
+    During_stim_table = plot_dict['During_stim_table'].iloc[::sampling_step, :]
+    Post_stim_end_table = plot_dict['Post_stim_end_table'].iloc[::sampling_step, :]
+    
+    ## Create the figure with 2 rows and 2 columns
+    fig = make_subplots(rows=2, cols=2, 
+                    shared_xaxes=True,  # Share x-axis between plot 1 and 2
+                    vertical_spacing=0.05, 
+                   
+                    column_widths=[0.7, 0.3],  # Make the right column smaller
+                    specs=[[{}, {"rowspan": 2}],  # Plot 3 spans 2 rows
+                           [{}, None]])  # Plot 2 spans 1 column
+    
+    # Plot 1: Membrane potential vs Time
+    fig.add_trace(go.Scatter(x=Full_TVC_table["Time_s"],
+                             y=Full_TVC_table["Membrane_potential_mV"],
+                             mode='lines',
+                             line=dict(color='black'),
+                             hoverinfo='text',
+                             text=[f"Time: {x} s<br>Membrane potential: {y} mV" 
+                                   for x, y in zip(np.round(Full_TVC_table["Time_s"],4), 
+                                                   np.round(Full_TVC_table["Membrane_potential_mV"],2))],
+                             showlegend=False),
+                  row=1, col=1)
+    
+    # Overlay red traces for P re_stim_start, During_stim, and Post_stim_end
+    for table in [Pre_stim_start_table, During_stim_table, Post_stim_end_table]:
+        fig.add_trace(go.Scatter(x=table["Time_s"],
+                                 y=table["Membrane_potential_mV"],
+                                 mode='lines',
+                                 line=dict(color='red'),
+                                 hoverinfo='text',
+                                 text=[f"Time: {x} s<br>Membrane potential: {y} mV" 
+                                       for x, y in zip(np.round(table["Time_s"],4), 
+                                                       np.round(table["Membrane_potential_mV"],2))],
+                                 showlegend=False),
+                      row=1, col=1)
+    
+    # Plot 2: Input Current vs Time
+    fig.add_trace(go.Scatter(x=Full_TVC_table["Time_s"],
+                             y=Full_TVC_table["Input_current_pA"],
+                             mode='lines',
+                             line=dict(color='black'),
+                             hoverinfo='text',
+                             text=[f"Time: {x} s<br>Input current: {y} pA" 
+                                   for x, y in zip(np.round(Full_TVC_table["Time_s"],4), 
+                                                   np.round(Full_TVC_table["Input_current_pA"],2))],
+                             showlegend=False),
+                  row=2, col=1)
+    
+    # Overlay red traces for Pre_stim_start, During_stim, and Post_stim_end
+    for table in [Pre_stim_start_table, During_stim_table, Post_stim_end_table]:
+        fig.add_trace(go.Scatter(x=table["Time_s"],
+                                 y=table["Input_current_pA"],
+                                 mode='markers',
+                                 marker=dict(color='red'),
+                                 hoverinfo='text',
+                                 text=[f"Time: {x} s<br>Input current: {y} pA" 
+                                       for x, y in zip(np.round(table["Time_s"],4), 
+                                                       np.round(table["Input_current_pA"],2))],
+                                 showlegend=False),
+                      row=2, col=1)
+    
+    # Plot 3: Scatter plot of Membrane potential vs Input current
+    fig.add_trace(go.Scatter(x=Full_fitted_table["Input_current_pA"],
+                             y=Full_fitted_table["Membrane_potential_mV"],
+                             mode='markers',
+                             marker=dict(color='red'),
+                             hoverinfo='text',
+                             text=[f"Input current: {x} pA<br>Membrane potential: {y} mV" 
+                                   for x, y in zip(np.round(Full_fitted_table["Input_current_pA"],4), 
+                                                   np.round(Full_fitted_table["Membrane_potential_mV"],2))],
+                             showlegend=False),
+                  row=1, col=2)
+    
+    
+    line_dash = 'dash' if (current_step < 40.0 or R2 < 0.8) else 'solid'
+    
+    # Add the red regression line
+    x_range = np.linspace(Full_fitted_table["Input_current_pA"].min(), Full_fitted_table["Input_current_pA"].max(),100)
+    y_range = [plot_dict["V_rest"] + plot_dict["IR"] * x for x in x_range]
+    hovertext = (f"IR = {np.round(IR,3)} GOhms<br>"
+             f"Vrest = {np.round(V_rest,2)} mV<br>"
+             f"R2 = {np.round(R2, 3)}<br>"
+             f"current_step = {np.round(current_step, 2)} pA")
+    fig.add_trace(go.Scatter(x=x_range, y=y_range,
+                         mode='lines',
+                         line=dict(color='blue', dash=line_dash),  # Apply dynamic line style
+                         hoverinfo='text',  # Set hover to display text
+                         text=hovertext,
+                         showlegend=False),
+              row=1, col=2)
+    
+    
+    
+    # Update layout
+    
+    fig.update_yaxes(title_text="Membrane Potential (mV)", row=1, col=1)  # Y-axis for plot 1
+
+    fig.update_xaxes(title_text="Time (s)", row=2, col=1)  # X-axis for plot 2
+    fig.update_yaxes(title_text="Input Current (pA)", row=2, col=1)  # Y-axis for plot 2
+    
+    fig.update_xaxes(title_text="Input Current (pA)", row=1, col=2)  # X-axis for plot 3
+    fig.update_yaxes(title_text="Membrane Potential (mV)", row=1, col=2)  # Y-axis for plot 3
+    
+    fig.update_layout(height=900, width=1200, showlegend=False)
+    if TACO_App:
+        
+        return fig
+    else:
+        fig.show()
+        
+    
 
 def removeOutliers(x, outlierConstant=3):
     '''
@@ -1296,6 +1768,13 @@ def fit_double_exponential_BE(original_fit_table, do_plot=False):
 class Tau_Too_Long_Error(Exception):
     """Exception raised when resulting tau is longer than fitted time window."""
     pass
+class Tau_Outside_Range_Error(Exception):
+    """Exception raised when resulting tau lower than 2.9 ms or higher than 80 ms."""
+    pass
+class Error_too_High(Exception):
+    """Exception raised when A/RMSE for time constant fit is higher than 0.1 ."""
+    pass
+
     
 def fit_membrane_time_cst (original_TVC_table,start_time,end_time,do_plot=False):
     '''
@@ -1364,13 +1843,13 @@ def fit_membrane_time_cst (original_TVC_table,start_time,end_time,do_plot=False)
 
         else:
 
-            membrane_delta=initial_membrane_SS-membrane_holding_voltage
+            membrane_delta = initial_membrane_SS-membrane_holding_voltage
         
             
-            initial_voltage_time_cst=membrane_holding_voltage+(2/3)*membrane_delta
+            initial_voltage_time_cst = membrane_holding_voltage+(2/3)*membrane_delta
 
-            initial_voltage_time_cst_idx=np.argmin(abs(y_data[start_idx:end_idx] - initial_voltage_time_cst))+start_idx
-            initial_time_cst=x_data[initial_voltage_time_cst_idx]-start_time
+            initial_voltage_time_cst_idx = np.argmin(abs(y_data[start_idx:end_idx] - initial_voltage_time_cst))+start_idx
+            initial_time_cst = x_data[initial_voltage_time_cst_idx]-start_time
             
         
             
@@ -1443,6 +1922,8 @@ def fit_membrane_time_cst (original_TVC_table,start_time,end_time,do_plot=False)
         best_C=np.nan
         NRMSE=np.nan
         return best_A,best_tau,best_C,membrane_holding_voltage,NRMSE
+    
+
     
 def Double_Heaviside_function(x, stim_start, stim_end,baseline,stim_amplitude):
     """Heaviside step function."""
