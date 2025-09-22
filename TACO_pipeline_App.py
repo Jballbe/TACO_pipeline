@@ -35,6 +35,7 @@ from plotly.express.colors import sample_colorscale
 from plotly.subplots import make_subplots
 from sklearn.preprocessing import minmax_scale 
 
+
 # # Load the external script dynamically
 # script_path = "Analysis_pipeline.py"
 # spec = importlib.util.spec_from_file_location("Analysis_pipeline", script_path)
@@ -47,13 +48,13 @@ FAST_INTERACT_INTERVAL = 60
 
 app_ui = ui.page_fluid(
     ui.h1("Welcome to TACO pipeline"),
-    ui.navset_tab_card(
+    ui.page_navbar(
         
-        ui.nav(
+        ui.nav_panel(
             "Create JSON configuration file",
             
             ui.layout_sidebar(
-                ui.panel_sidebar(
+                ui.sidebar(
                     ui.h3("Create JSON configuration file"),
                     ui.output_ui("add_database"),
                     ui.input_action_button("save_json", "Save JSON"),
@@ -61,33 +62,33 @@ app_ui = ui.page_fluid(
                     
                     
                 ),
-                ui.panel_main(
-                    ui.layout_column_wrap(
-                        2,  # Two columns layout
+                #ui.panel_main(
+                    #ui.layout_column_wrap(
+                        #2,  # Two columns layout
                         # First column
-                        ui.panel_main(
+                       # ui.panel_main(
                             ui.input_text(
                                 "json_file_path",
                                 "Enter File Path for Saving JSON file (ending in .json):",
                                 placeholder="Enter full path to save the JSON file, e.g., /path/to/folder/file.json",
                             ),
-                            ui.input_action_button("check_dir_1", "Check File Path"),
+                            ui.input_action_button("check_json_file_path", "Check File Path"),
                             ui.br(),
-                            ui.output_ui("status_1"),
-                        ),
+                            ui.output_ui("status_json_file_path"),
+                        #),
                         # Second column
-                        ui.panel_main(
+                        #ui.panel_main(
                             ui.input_text(
-                                "Saving_folder",
+                                "Saving_folder_path",
                                 "Enter Saving Directory for Analysis:",
                                 placeholder="Enter path to saving folder, e.g., /path/to/folder/",
                             ),
-                            ui.input_action_button("check_dir_2", "Check Saving Folder Path"),
+                            ui.input_action_button("check_saving_folder_path", "Check Saving Folder Path"),
                             ui.br(),
-                            ui.output_ui("status_2"),
-                        ),
+                            ui.output_ui("status_saving_folder_path"),
+                        #),
                         # Second column
-                        ui.panel_main(
+                        #ui.panel_main(
                             ui.input_text(
                                 "Path_to_QC_file",
                                 "Enter Path to Quality Criteria File:",
@@ -96,14 +97,14 @@ app_ui = ui.page_fluid(
                             ui.input_action_button("check_QC_file_path", "Check QC file path"),
                             ui.br(),
                             ui.output_ui("status_QC_file"),
-                        ),
+                        #),
                         
 
-                    ),
+                    #),
                     ui.hr(),
-                    ui.layout_column_wrap(2,
+                    #ui.layout_column_wrap(2,
                         # Third column
-                        ui.panel_main(
+                        #ui.panel_main(
                             ui.row(
                                 # Row containing the buttons and input field
                                 
@@ -180,13 +181,13 @@ app_ui = ui.page_fluid(
                             ui.br(),
                             
                             
-                        ),
-                    )
-                ),
+                        #),
+                    #)
+                #),
             ),
             ),
         
-        ui.nav(
+        ui.nav_panel(
             "Run Analysis",
             ui.input_numeric("n_CPU", "number of CPU cores to use", value=int(os.cpu_count()/2)),
             ui.input_file("json_file_input", "Upload Json configuration File:"),
@@ -205,118 +206,120 @@ app_ui = ui.page_fluid(
                 "Enter Folder Path for Saving Summary tables file :",
                 placeholder="Enter full path to save the summary tables e.g., /path/to/folder/",
             ),
-            ui.input_action_button("check_saving_summaryfolder", "Check Folder Path"),
+            ui.input_action_button("check_saving_summary_folder_path", "Check Folder Path"),
             
-            ui.output_ui("summary_folder_status"),
-            ui.input_action_button("summarise_analysis", "Summarize Analysis"),
+            ui.output_ui("summary_folder_path_status"),
+            ui.input_action_button("summarize_analysis", "Summarize Analysis"),
             ui.output_text_verbatim("summarize_analysis_output")),
         
         
         
-        ui.nav(
+        ui.nav_panel(
             "Cell Visualization",
-            ui.navset_pill_card(
+            ui.navset_card_pill(
                 # Encapsulate existing tabs into the "Cell Visualization" nav_pill
-                ui.nav(
+                ui.nav_panel(
                     "Select Cell",
                     ui.layout_sidebar(
-                        ui.panel_sidebar(
+                        ui.sidebar(
                             ui.input_file("JSON_config_file", 'Choose JSON configuration files'),
                             ui.input_selectize("Cell_file_select", "Select Cell to Analyse", choices=[]),
                             ui.input_action_button('Update_cell_btn', 'Update Cell'),
                         ),
-                        ui.panel_main(
+                        #ui.panel_main(
                             ui.output_table('config_json_table')
-                        ),
+                        #),
                     ),
                 ),
-                ui.nav(
+                ui.nav_panel(
                     "Cell Information",
-                    ui.layout_sidebar(
-                        ui.panel_sidebar(width=0),
-                        ui.panel_main(
-                            ui.navset_pill_card(
-                                ui.nav(
-                                    "Cell summary",
-                                    ui.row(
-                                        ui.column(2, ui.output_table("Cell_Metadata_table")),
-                                        ui.column(2, ui.output_table("Cell_linear_properties_table")),
-                                        ui.column(
-                                            4,
-                                            ui.output_table("Cell_Firing_properties_table"),
-                                            ui.output_table("Cell_Adaptation_table"),
-                                        ),
-                                    ),
-                                ),
-                                ui.nav(
-                                    "Linear properties",
-                                    ui.row(
-                                        ui.column(
-                                            4,
-                                            output_widget("cell_Holding_potential_v_Holding_current_plolty"),
-                                            output_widget("cell_SS_potential_v_stim_amp_plolty"),
-                                        ),
-                                        ui.column(
-                                            4,
-                                            output_widget("cell_input_resistance_v_stim_amp_plolty"),
-                                            output_widget('cell_time_constant_v_stim_amp_plolty'),
-                                        ),
-                                        ui.column(
-                                            4,
-                                            output_widget("cell_Holding_current_pA_v_stim_amp_plolty"),
-                                            output_widget("cell_Holding_potential_mV_v_stim_amp_plolty"),
-                                        ),
-                                    ),
-                                ),
-                                
-                                    
-                                    
-                                ui.nav(
-                                    "Processing report",
-                                    ui.output_table('cell_processing_time_table')
+                    ui.navset_tab(
+                        ui.nav_panel(
+                            "Cell summary",
+                            ui.row(
+                                ui.column(2, ui.output_table("Cell_Metadata_table")),
+                                ui.column(2, ui.output_table("Cell_linear_properties_table")),
+                                ui.column(
+                                    4,
+                                    ui.output_table("Cell_Firing_properties_table"),
+                                    ui.output_table("Cell_Adaptation_table"),
                                 ),
                             ),
                         ),
+                        ui.nav_panel(
+                            "Linear properties",
+                            ui.row(
+                                ui.column(
+                                    4,
+                                    output_widget("cell_Holding_potential_v_Holding_current_plolty"),
+                                    output_widget("cell_SS_potential_v_stim_amp_plolty"),
+                                ),
+                                ui.column(
+                                    4,
+                                    output_widget("cell_input_resistance_v_stim_amp_plolty"),
+                                    output_widget('cell_time_constant_v_stim_amp_plolty'),
+                                ),
+                                ui.column(
+                                    4,
+                                    output_widget("cell_Holding_current_pA_v_stim_amp_plolty"),
+                                    output_widget("cell_Holding_potential_mV_v_stim_amp_plolty"),
+                                ),
+                            ),
+                        ),
+                        
+                            
+                            
+                        ui.nav_panel(
+                            "Processing report",
+                            ui.output_table('cell_processing_time_table')
+                        ),
                     ),
+                    # ui.layout_sidebar(
+                    #     ui.sidebar(),
+                    #     #ui.panel_main(
+                            
+                            
+                    #     #),
+                    # ),
                 ),
-                ui.nav(
+                ui.nav_panel(
                     "Sweep Analysis",
                     ui.layout_sidebar(
-                        ui.panel_sidebar(
+                        ui.sidebar(
                             ui.input_selectize("Sweep_selected", "Select Sweep to Analyse", choices=[]),
                             ui.input_checkbox("BE_correction", "Correct for Bridge Error"),
                             ui.input_checkbox("Superimpose_BE_Correction", "Superimpose BE Correction"),
-                            width=2
+                            
                         ),
-                        ui.panel_main(
+                        #ui.panel_main(
                             ui.navset_tab(
-                                ui.nav(
+                                ui.nav_panel(
                                     "Sweep information",
                                     ui.output_data_frame('Sweep_info_table')
                                 ),
-                                ui.nav(
+                                ui.nav_panel(
                                     'Spike Analysis',
                                     output_widget('Sweep_spike_plotly'),
                                     ui.output_data_frame('Sweep_spike_features_table')
                                 ),
-                                ui.nav(
+                                ui.nav_panel(
                                     "Spike phase plot",
                                     ui.row(
                                         ui.column(6, output_widget("Spike_superposition_plot")),
                                         ui.column(6, output_widget("Spike_phase_plane_plot")),
                                     ),
                                 ),
-                                ui.nav(
+                                ui.nav_panel(
                                     'Sweep_QC',
                                     ui.output_table('Sweep_QC_table')
                                 ),
-                                ui.nav(
+                                ui.nav_panel(
                                     'Bridge Error analysis',
                                     output_widget("BE_plotly"),
                                     ui.output_text_verbatim("BE_value"),
                                     ui.output_table('BE_conditions_table'),
                                 ),
-                                ui.nav(
+                                ui.nav_panel(
                                     'Linear properties analysis',
                                     #ui.output_table("linear_properties_conditions_table"),
                                     ui.output_table("condition_table"),
@@ -327,68 +330,66 @@ app_ui = ui.page_fluid(
                                         output_widget("cell_Time_cst_analysis"))
                                 ),
                             ),
-                        ),
+                       # ),
                     ),
                 ),
-                ui.nav(
+                ui.nav_panel(
                     "Firing Analysis",
                     ui.layout_sidebar(
-                        ui.panel_sidebar(width=0),
-                        ui.panel_main(
-                            ui.navset_pill(
-                                ui.nav(
+                        ui.sidebar(ui.input_select(
+                            'Firing_response_type',
+                            "Select response type",
+                            choices=['Time_based', 'Index_based', 'Interval_based']
+                            
+                        ),
+                            ),
+                        #ui.panel_main(
+                            ui.navset_tab(
+                                ui.nav_panel(
                                     "I/O",
-                                    ui.input_select(
-                                        'Firing_response_type',
-                                        "Select response type",
-                                        choices=['Time_based', 'Index_based', 'Interval_based']
-                                    ),
+                                    
                                     output_widget("Time_based_IO_plotly"),
                                     ui.row(
-                                        ui.column(2, ui.tags.b("Gain"), output_widget("Gain_regression_plot_time_based_Second")),
-                                        ui.column(2, ui.tags.b("Threshold"), output_widget("Threshold_regression_plot_Second")),
-                                        ui.column(2, ui.tags.b("Saturation Frequency"), output_widget("Saturation_Frequency_regression_plot_Second")),
-                                        ui.column(2, ui.tags.b("Saturation Stimulus"), output_widget("Saturation_Stimulus_regression_plot_Second")),
-                                        ui.column(2, ui.tags.b("Response Failure Frequency"), output_widget("Response_Failure_Frequency_regression_plot_Second")),
-                                        ui.column(2, ui.tags.b("Response Failure Stimulus"), output_widget("Response_Failure_Stimulus_regression_plot_Second"))
+                                        ui.column(2, ui.tags.b("Gain"), output_widget("Gain_regression_plot")),
+                                        ui.column(2, ui.tags.b("Threshold"), output_widget("Threshold_regression_plot")),
+                                        ui.column(2, ui.tags.b("Saturation Frequency"), output_widget("Saturation_Frequency_regression_plot")),
+                                        ui.column(2, ui.tags.b("Saturation Stimulus"), output_widget("Saturation_Stimulus_regression_plot")),
+                                        ui.column(2, ui.tags.b("Response Failure Frequency"), output_widget("Response_Failure_Frequency_regression_plot")),
+                                        ui.column(2, ui.tags.b("Response Failure Stimulus"), output_widget("Response_Failure_Stimulus_regression_plot"))
                                     ),
                                     ui.row(
-                                        ui.column(2, ui.output_table("Gain_regression_table_time_based_Second")),
-                                        ui.column(2, ui.output_table("Threshold_regression_table_Second")),
-                                        ui.column(2, ui.output_table("Saturation_Frequency_regression_Second")),
-                                        ui.column(2, ui.output_table("Saturation_Stimulus_regression_Second")),
-                                        ui.column(2, ui.output_table("Response_Fail_Frequency_regression_Second")),
-                                        ui.column(2, ui.output_table("Response_Fail_Stimulus_regression_Second"))
+                                        ui.column(2, ui.output_table("Gain_regression_table_time_based")),
+                                        ui.column(2, ui.output_table("Threshold_regression_table")),
+                                        ui.column(2, ui.output_table("Saturation_Frequency_regression")),
+                                        ui.column(2, ui.output_table("Saturation_Stimulus_regression")),
+                                        ui.column(2, ui.output_table("Response_Fail_Frequency_regression")),
+                                        ui.column(2, ui.output_table("Response_Fail_Stimulus_regression"))
                                     )
                                 ),
-                                ui.nav(
+                                ui.nav_panel(
                                     "Details",
                                     ui.row(
-                                        ui.input_select(
-                                            'Firing_response_type_new',
-                                            'Select response type',
-                                            choices=["Time_based", "Index_based", "Interval_based"]
-                                        ),
-                                        ui.input_select('Firing_output_duration_new', 'Select response type', choices=[]),
+                                        
+                                        ui.input_select('Firing_output_duration_new', 'Select output duration for fitting explanation', choices=[]),
                                         ui.input_selectize('Plot_new', "Select plot to display", choices=[]),
                                     ),
-                                    output_widget("Time_based_IO_plotly_new"),
+                                    output_widget("IO_analysis_plotly"),
                                     ui.output_table("IO_fit_parameter_table")
                                 ),
-                                ui.nav(
+                                ui.nav_panel(
                                     "Adaptation",
                                     ui.input_select('Adaptation_feature_to_display', "Select feature ", choices=[]),
                                     output_widget("Adaptation_plotly"),
                                     ui.output_table("Adaptation_table"),
                                 ),
                             ),
-                        ),
+                        #),
                     ),
                 ),
-                ui.nav(
+                ui.nav_panel(
                     "In progress",
                     ui.layout_sidebar(
-                        ui.panel_sidebar(
+                        ui.sidebar(
                             ui.input_selectize("Sweep_selected_in_progress", "Select Sweep to Analyse", choices=[]),
                             ui.input_selectize(
                                 "x_Spike_feature",
@@ -404,15 +405,15 @@ app_ui = ui.page_fluid(
                             ui.input_checkbox("BE_correction_in_process", "Correct for Bridge Error"),
                             width=2
                         ),
-                        ui.panel_main(
+                       # ui.panel_main(
                             ui.navset_pill(
-                                ui.nav(
+                                ui.nav_panel(
                                     "Spike feature correlation",
                                     output_widget("Spike_features_index_correlation"),
                                 ),
                             ),
                             width=10
-                        ),
+                        #),
                     ),
                 ),
             ),
@@ -450,16 +451,18 @@ def estimate_processing_time(start_time, total_iteration,i):
     
     return formatted_time, remaining_formatted_time
 
+# Function to highlight cells
 def highlight_late(s):
     
     return ['background-color: green' if s_ == "True" else 'background-color: red' if s_ =="False" else 'background-color: white' for s_ in s]
 
 def highlight_rmse_a(s):
-    # Check if the index is "A/RMSE" and apply the color condition
+
     if s.name == "RMSE/A":
         return ['background-color: green' if s.iloc[0] < 0.1 else 'background-color: red']
     return ['']
-# Function to highlight cells
+
+
 def highlight_condition(s):
     return ['background-color: green' if v else 'background-color: red' for v in s]
 
@@ -481,89 +484,91 @@ def get_color_gradient(c1, c2, n):
     rgb_colors = [((1-mix)*c1_rgb + (mix*c2_rgb)) for mix in mix_pcts]
     return ["#" + "".join([format(int(round(val*255)), "02x") for val in item]) for item in rgb_colors]
 
-def get_firing_analysis_tables(cells,response_type,output_duration):
+# def get_firing_analysis_tables(cells,response_type,output_duration):
     
 
-    Full_SF_table = cells[2]
-    Sweep_info_table = cells[4]
-    sweep_QC_table = cells[5]
-    cell_fit_table = cells[6]
-    cell_feature_table = cells[7]
+#     Full_SF_table = cells[2]
+#     Sweep_info_table = cells[4]
+#     sweep_QC_table = cells[5]
+#     cell_fit_table = cells[6]
+#     cell_feature_table = cells[7]
     
-    response_type=response_type.replace(' ','_')
+#     response_type=response_type.replace(' ','_')
     
-    sub_cell_fit_table = cell_fit_table.loc[cell_fit_table['Response_type'] == response_type,:]
-    sub_cell_feature_table = cell_feature_table.loc[cell_feature_table['Response_type'] == response_type,:]
+#     sub_cell_fit_table = cell_fit_table.loc[cell_fit_table['Response_type'] == response_type,:]
+#     sub_cell_feature_table = cell_feature_table.loc[cell_feature_table['Response_type'] == response_type,:]
 
     
     
     
-    if response_type == 'Time_based':
-        response = str(str(int(output_duration*1e3))+'ms')
-    else:
+#     if response_type == 'Time_based':
+#         response = str(str(int(output_duration*1e3))+'ms')
+#     else:
         
-        response = str(response_type.replace('_based',' ') + str(int(output_duration)))
+#         response = str(response_type.replace('_based',' ') + str(int(output_duration)))
     
-    current_stim_freq_table = fir_an.get_stim_freq_table(
-        Full_SF_table.copy(), Sweep_info_table.copy(),sweep_QC_table.copy(), output_duration,response_type)
-    current_stim_freq_table['Response'] = response
+#     current_stim_freq_table = fir_an.get_stim_freq_table(
+#         Full_SF_table.copy(), Sweep_info_table.copy(),sweep_QC_table.copy(), output_duration,response_type)
+#     current_stim_freq_table['Response'] = response
     
-    model = sub_cell_fit_table.loc[sub_cell_fit_table['Output_Duration'] == output_duration,'I_O_obs'].values[0]
-    if model == 'Hill' or model == 'Hill-Sigmoid':
-        min_stim = np.nanmin(current_stim_freq_table.loc[:,'Stim_amp_pA'])
-        max_stim = np.nanmax(current_stim_freq_table.loc[:,'Stim_amp_pA'])
-        stim_array = np.arange(min_stim,max_stim,.1)
-        Hill_Half_cst = sub_cell_fit_table.loc[cell_fit_table['Output_Duration'] == output_duration,'Hill_Half_cst'].values[0]
-        Hill_amplitude = sub_cell_fit_table.loc[cell_fit_table['Output_Duration'] == output_duration,'Hill_amplitude'].values[0]
-        Hill_coef = sub_cell_fit_table.loc[cell_fit_table['Output_Duration'] == output_duration,'Hill_coef'].values[0]
-        Hill_x0 = sub_cell_fit_table.loc[cell_fit_table['Output_Duration'] == output_duration,'Hill_x0'].values[0]
-        freq_array = fir_an.hill_function(stim_array, Hill_x0, Hill_coef, Hill_Half_cst)
-        freq_array *= Hill_amplitude
+#     model = sub_cell_fit_table.loc[sub_cell_fit_table['Output_Duration'] == output_duration,'I_O_obs'].values[0]
+#     if model == 'Hill' or model == 'Hill-Sigmoid':
+#         min_stim = np.nanmin(current_stim_freq_table.loc[:,'Stim_amp_pA'])
+#         max_stim = np.nanmax(current_stim_freq_table.loc[:,'Stim_amp_pA'])
+#         stim_array = np.arange(min_stim,max_stim,.1)
+#         Hill_Half_cst = sub_cell_fit_table.loc[cell_fit_table['Output_Duration'] == output_duration,'Hill_Half_cst'].values[0]
+#         Hill_amplitude = sub_cell_fit_table.loc[cell_fit_table['Output_Duration'] == output_duration,'Hill_amplitude'].values[0]
+#         Hill_coef = sub_cell_fit_table.loc[cell_fit_table['Output_Duration'] == output_duration,'Hill_coef'].values[0]
+#         Hill_x0 = sub_cell_fit_table.loc[cell_fit_table['Output_Duration'] == output_duration,'Hill_x0'].values[0]
+#         freq_array = fir_an.hill_function(stim_array, Hill_x0, Hill_coef, Hill_Half_cst)
+#         freq_array *= Hill_amplitude
         
-        if model == 'Hill-Sigmoid':
-            sigmoid_sigma = sub_cell_fit_table.loc[cell_fit_table['Output_Duration'] == output_duration,'Sigmoid_sigma'].values[0]
-            sigmoid_x0 = sub_cell_fit_table.loc[cell_fit_table['Output_Duration'] == output_duration,'Sigmoid_x0'].values[0]
+#         if model == 'Hill-Sigmoid':
+#             sigmoid_sigma = sub_cell_fit_table.loc[cell_fit_table['Output_Duration'] == output_duration,'Sigmoid_sigma'].values[0]
+#             sigmoid_x0 = sub_cell_fit_table.loc[cell_fit_table['Output_Duration'] == output_duration,'Sigmoid_x0'].values[0]
             
-            freq_array *= fir_an.sigmoid_function(stim_array , sigmoid_x0, sigmoid_sigma)
+#             freq_array *= fir_an.sigmoid_function(stim_array , sigmoid_x0, sigmoid_sigma)
         
-        model_table = pd.DataFrame({'Stim_amp_pA' : stim_array,
-                                    "Frequency_Hz" : freq_array})
-        model_table['Response'] = response
-        Gain = sub_cell_feature_table.loc[sub_cell_feature_table['Output_Duration'] == output_duration,'Gain'].values[0]
-        Threshold = sub_cell_feature_table.loc[sub_cell_feature_table['Output_Duration'] == output_duration,'Threshold'].values[0]
-        Intercept = -Gain*Threshold
-        IO_freq = stim_array*Gain+Intercept
+#         model_table = pd.DataFrame({'Stim_amp_pA' : stim_array,
+#                                     "Frequency_Hz" : freq_array})
+#         model_table['Response'] = response
+#         Gain = sub_cell_feature_table.loc[sub_cell_feature_table['Output_Duration'] == output_duration,'Gain'].values[0]
+#         Threshold = sub_cell_feature_table.loc[sub_cell_feature_table['Output_Duration'] == output_duration,'Threshold'].values[0]
+#         Intercept = -Gain*Threshold
+#         IO_freq = stim_array*Gain+Intercept
         
-        IO_table = pd.DataFrame({'Stim_amp_pA' : stim_array,
-                                    "Frequency_Hz" : IO_freq})
-        IO_table['Response'] = response
-        IO_table=IO_table.loc[IO_table['Frequency_Hz']>=-10.,:]
+#         IO_table = pd.DataFrame({'Stim_amp_pA' : stim_array,
+#                                     "Frequency_Hz" : IO_freq})
+#         IO_table['Response'] = response
+#         IO_table=IO_table.loc[IO_table['Frequency_Hz']>=-10.,:]
         
-        if not np.isnan(sub_cell_feature_table.loc[sub_cell_feature_table['Output_Duration'] == output_duration,'Saturation_Stimulus'].values[0]):
-            Saturation_stimulus =sub_cell_feature_table.loc[sub_cell_feature_table['Output_Duration'] == output_duration,'Saturation_Stimulus'].values[0]
-            Saturation_freq =sub_cell_feature_table.loc[sub_cell_feature_table['Output_Duration'] == output_duration,'Saturation_Frequency'].values[0]
-            Saturation_table = pd.DataFrame({'Stim_amp_pA' : Saturation_stimulus,
-                                        "Frequency_Hz" : Saturation_freq,
-                                        'Response' : response})
+#         if not np.isnan(sub_cell_feature_table.loc[sub_cell_feature_table['Output_Duration'] == output_duration,'Saturation_Stimulus'].values[0]):
+#             Saturation_stimulus =sub_cell_feature_table.loc[sub_cell_feature_table['Output_Duration'] == output_duration,'Saturation_Stimulus'].values[0]
+#             Saturation_freq =sub_cell_feature_table.loc[sub_cell_feature_table['Output_Duration'] == output_duration,'Saturation_Frequency'].values[0]
+#             Saturation_table = pd.DataFrame({'Stim_amp_pA' : Saturation_stimulus,
+#                                         "Frequency_Hz" : Saturation_freq,
+#                                         'Response' : response})
             
-        else:
-            Saturation_table = pd.DataFrame()
+#         else:
+#             Saturation_table = pd.DataFrame()
     
         
-        current_stim_freq_table=1
-        model_table=1
-        IO_table=1
-        Saturation_table=1
-        print("Response_type=",response_type)
-        print(current_stim_freq_table,model_table,IO_table,Saturation_table)
-        return current_stim_freq_table, model_table, IO_table, Saturation_table
+#         current_stim_freq_table=1
+#         model_table=1
+#         IO_table=1
+#         Saturation_table=1
+#         print("Response_type=",response_type)
+#         print(current_stim_freq_table,model_table,IO_table,Saturation_table)
+#         return current_stim_freq_table, model_table, IO_table, Saturation_table
     
 def get_BE_value_and_table(cell_dict, sweep_id):
+    """
+    Get Brdige error values for all sweeps, and respective conditions
+
+    """
     
     Full_TVC_table = cell_dict['Full_TVC_table']
-    Full_SF_table = cell_dict['Full_SF_table']
     sweep_info_table = cell_dict['Sweep_info_table']
-    Sweep_QC_table = cell_dict['Sweep_QC_table']
     if np.isnan(sweep_info_table.loc[sweep_info_table['Sweep']==sweep_id,"Bridge_Error_GOhms"].values[0]) == False:
         TVC_table = Full_TVC_table.loc[sweep_id,"TVC"]
         stim_amp = sweep_info_table.loc[sweep_info_table['Sweep']==sweep_id,"Stim_SS_pA"].values[0]
@@ -575,7 +580,11 @@ def get_BE_value_and_table(cell_dict, sweep_id):
         
     
 def get_firing_analysis(cell_dict,response_type):
-    
+    """
+    Organize the firing analysis details and results of a cell for a given response type.
+    Produces the corresponding plotly plot
+
+    """
     
     
     Sweep_info_table = cell_dict['Sweep_info_table']
@@ -607,6 +616,7 @@ def get_firing_analysis(cell_dict,response_type):
             
             response = str(response_type.replace('_based',' ') + str(int(current_response_duration)))
             current_response_duration = int(current_response_duration)
+            
         current_stim_freq_table = fir_an.get_stim_freq_table(
             Full_SF_table.copy(), Sweep_info_table.copy(),sweep_QC_table.copy(), current_response_duration,response_type)
         
@@ -617,7 +627,7 @@ def get_firing_analysis(cell_dict,response_type):
         model = sub_cell_fit_table.loc[sub_cell_fit_table['Output_Duration'] == current_response_duration,'I_O_obs'].values[0]
         if model == 'Hill' or model == 'Hill-Sigmoid':
             
-            model_table = fir_an.fit_IO_relationship_NEW_TEST(current_stim_freq_table, "--")[1]
+            model_table = fir_an.fit_IO_relationship(current_stim_freq_table, "--")[1]
             
             min_stim = np.nanmin(current_stim_freq_table.loc[:,'Stim_amp_pA'])
             max_stim = np.nanmax(current_stim_freq_table.loc[:,'Stim_amp_pA'])
@@ -626,7 +636,7 @@ def get_firing_analysis(cell_dict,response_type):
             model_table['Response'] = response
             Gain = sub_cell_feature_table.loc[sub_cell_feature_table['Output_Duration'] == current_response_duration,'Gain'].values[0]
             
-            plot_list = fir_an.get_IO_features_NEW_TEST(current_stim_freq_table, response_type, current_response_duration, True,True)
+            plot_list = fir_an.get_IO_features(current_stim_freq_table, response_type, current_response_duration, True,True)
             IO_plot = plot_list["3-IO_fit"]
             Intercept = IO_plot['intercept']
             
@@ -698,92 +708,92 @@ def get_firing_analysis(cell_dict,response_type):
 
         return IO_figure
 
-def get_feature_regression_plot_tables(cell_dict,response_type,feature):
+# def get_feature_regression_plot_tables(cell_dict,response_type,feature):
     
     
-    cell_feature_table = cell_dict['Cell_feature_table']
+#     cell_feature_table = cell_dict['Cell_feature_table']
 
 
-    response_type=response_type.replace(' ','_')
+#     response_type=response_type.replace(' ','_')
     
-    sub_cell_feature_table = cell_feature_table.loc[cell_feature_table['Response_type'] == response_type,[feature,'Output_Duration']]
-    sub_cell_feature_table = sub_cell_feature_table.dropna(subset=[feature,'Output_Duration'])
-    response_type_legend_dict = {'Time_based':'ms',
-                                 'Index_based':'Spike Index',
-                                 'Interval_based':'Spike Interval'}
+#     sub_cell_feature_table = cell_feature_table.loc[cell_feature_table['Response_type'] == response_type,[feature,'Output_Duration']]
+#     sub_cell_feature_table = sub_cell_feature_table.dropna(subset=[feature,'Output_Duration'])
+#     response_type_legend_dict = {'Time_based':'ms',
+#                                  'Index_based':'Spike Index',
+#                                  'Interval_based':'Spike Interval'}
     
    
         
-    if sub_cell_feature_table.shape[0]>=2:
+#     if sub_cell_feature_table.shape[0]>=2:
 
-        a,b = fir_an.linear_fit(np.array(sub_cell_feature_table.loc[:,'Output_Duration']),np.array(sub_cell_feature_table.loc[:,feature]))
+#         a,b = fir_an.linear_fit(np.array(sub_cell_feature_table.loc[:,'Output_Duration']),np.array(sub_cell_feature_table.loc[:,feature]))
 
-        xgrid = np.linspace(start=np.nanmin(sub_cell_feature_table.loc[:,'Output_Duration']), stop=np.nanmax(sub_cell_feature_table.loc[:,'Output_Duration']), num=30)
-        ygrid_extended = b + a * xgrid
+#         xgrid = np.linspace(start=np.nanmin(sub_cell_feature_table.loc[:,'Output_Duration']), stop=np.nanmax(sub_cell_feature_table.loc[:,'Output_Duration']), num=30)
+#         ygrid_extended = b + a * xgrid
         
         
         
-        figure = go.FigureWidget(
-            data=[
-                go.Scattergl(
-                    x=np.array(sub_cell_feature_table.loc[:,'Output_Duration']),
-                    y=np.array(sub_cell_feature_table.loc[:,feature]),
-                    mode="markers",
-                    marker=dict(color="rgba(0, 0, 0, 1)", size=5),
-                    ),
-                go.Scattergl(
-                    x=xgrid,
-                    y=ygrid_extended,
-                    mode="lines",
-                    line=dict(color="red", width=2),
-                    ),
-                ],
-            layout={"showlegend": False},
-            )
+#         figure = go.FigureWidget(
+#             data=[
+#                 go.Scattergl(
+#                     x=np.array(sub_cell_feature_table.loc[:,'Output_Duration']),
+#                     y=np.array(sub_cell_feature_table.loc[:,feature]),
+#                     mode="markers",
+#                     marker=dict(color="rgba(0, 0, 0, 1)", size=5),
+#                     ),
+#                 go.Scattergl(
+#                     x=xgrid,
+#                     y=ygrid_extended,
+#                     mode="lines",
+#                     line=dict(color="red", width=2),
+#                     ),
+#                 ],
+#             layout={"showlegend": False},
+#             )
         
-        ygrid_original = b + a * np.array(sub_cell_feature_table.loc[:,feature])
+#         ygrid_original = b + a * np.array(sub_cell_feature_table.loc[:,feature])
         
-        r2 = r2_score(np.array(sub_cell_feature_table.loc[:,feature]), ygrid_original)
+#         r2 = r2_score(np.array(sub_cell_feature_table.loc[:,feature]), ygrid_original)
         
         
-        table = pd.DataFrame([np.nanmax(np.array(sub_cell_feature_table.loc[:,feature])),
-                              np.nanmin(np.array(sub_cell_feature_table.loc[:,feature])),
-                              a,
-                              b,
-                              r2])
-        table=pd.concat([pd.DataFrame(['Maximum','Minimum','Slope','Intercept','R2']),table], axis=1)
+#         table = pd.DataFrame([np.nanmax(np.array(sub_cell_feature_table.loc[:,feature])),
+#                               np.nanmin(np.array(sub_cell_feature_table.loc[:,feature])),
+#                               a,
+#                               b,
+#                               r2])
+#         table=pd.concat([pd.DataFrame(['Maximum','Minimum','Slope','Intercept','R2']),table], axis=1)
     
     
         
         
-    else:
-        figure = go.FigureWidget(
-            data=[
-                go.Scattergl(
-                    x=np.array(sub_cell_feature_table.loc[:,'Output_Duration']),
-                    y=np.array(sub_cell_feature_table.loc[:,feature]),
-                    mode="markers",
-                    marker=dict(color="rgba(0, 0, 0, 1)", size=5),
-                    ),
-                ],
-            layout={"showlegend": False},
-            )
+#     else:
+#         figure = go.FigureWidget(
+#             data=[
+#                 go.Scattergl(
+#                     x=np.array(sub_cell_feature_table.loc[:,'Output_Duration']),
+#                     y=np.array(sub_cell_feature_table.loc[:,feature]),
+#                     mode="markers",
+#                     marker=dict(color="rgba(0, 0, 0, 1)", size=5),
+#                     ),
+#                 ],
+#             layout={"showlegend": False},
+#             )
         
-        if sub_cell_feature_table.shape[0]>0:
-            table = pd.DataFrame([np.nanmax(np.array(sub_cell_feature_table.loc[:,feature])),
-                                  np.nanmin(np.array(sub_cell_feature_table.loc[:,feature]))])
-        else:
-            table=pd.DataFrame([np.nan,np.nan])
-        table=pd.concat([pd.DataFrame(['Maximum','Minimum']),table], axis=1)
+#         if sub_cell_feature_table.shape[0]>0:
+#             table = pd.DataFrame([np.nanmax(np.array(sub_cell_feature_table.loc[:,feature])),
+#                                   np.nanmin(np.array(sub_cell_feature_table.loc[:,feature]))])
+#         else:
+#             table=pd.DataFrame([np.nan,np.nan])
+#         table=pd.concat([pd.DataFrame(['Maximum','Minimum']),table], axis=1)
     
-    figure.update_layout(
-        autosize=False,
-        width=300,
-        height=400,
-        xaxis_title=response_type_legend_dict[response_type], 
-        yaxis_title=feature)
+#     figure.update_layout(
+#         autosize=False,
+#         width=300,
+#         height=400,
+#         xaxis_title=response_type_legend_dict[response_type], 
+#         yaxis_title=feature)
     
-    return figure,table
+#     return figure,table
 
 
 
@@ -796,90 +806,108 @@ def server(input: Inputs, output: Outputs, session: Session):
     
     print("Hello World!")
     
-    
-    ################# Create JSON configuration file
-    
-    
     database_list = reactive.Value([])
     db_done = reactive.Value([])
+
+    
     # Check for the first directory
     @output
     @render.ui
-    @reactive.event(input.check_dir_1)
-    def status_1():
-        full_path = input.json_file_path()
-        if not full_path:
-            return ui.HTML("<b>No path provided for Path 1.</b>")
-        
-        dir_path, file_name = os.path.split(full_path)
-        if os.path.isdir(dir_path):
-            if file_name.endswith(".json"):
-                if os.path.isfile(full_path):
+    @reactive.event(input.check_json_file_path)
+    def status_json_file_path():
+        """
+        Determines the status of a JSON file path provided by the user.
+    
+        Returns:
+            - A UI message indicating whether the directory exists,
+              whether the file has a `.json` extension, and whether it already exists.
+        """
+        full_path = input.json_file_path()  # Get the file path input from the user
+    
+        if not full_path:  # Check if the input is empty or None
+            return ui.HTML("<b>No path provided for Path 1.</b>")  # Return an error message
+    
+        dir_path, file_name = os.path.split(full_path)  # Extract directory and file name
+    
+        if os.path.isdir(dir_path):  # Check if the directory exists
+            if file_name.endswith(".json"):  # Check if the file has a .json extension
+                if os.path.isfile(full_path):  # Check if the file already exists
                     return ui.HTML(
                         f"""<span style='color:green;'><b>Directory exists:</b> `{dir_path}`</span><br>
                         <span style='color:red;'><b>File </b> {file_name} already exists </span>"""
                     )
-                else:
+                else:  # If the file does not exist, confirm it will be saved under the given name
                     return ui.HTML(
                         f"""<span style='color:green;'><b>Directory exists:</b> {dir_path}</span><br>
                         <b>File will be saved as:</b> {file_name}"""
                     )
-            else:
+            else:  # If the file does not have a .json extension, return a warning
                 return ui.HTML(
                     f"""<span style='color:green;'><b>Directory exists:</b> {dir_path}</span><br>
-                    <span style='color:red;'><b>Warning:</b> {file_name} does not have a .json extension.</span>
-                    """
+                    <span style='color:red;'><b>Warning:</b> {file_name} does not have a .json extension.</span>"""
                 )
-        else:
+        else:  # If the directory does not exist, return an error message
             return ui.HTML(
                 f"""<span style='color:red;'><b>Directory does not exist:</b> {dir_path}</span>"""
             )
 
-    # Check for the second directory
+
     @output
     @render.ui
-    @reactive.event(input.check_dir_2)
-    def status_2():
-        full_path = input.Saving_folder()
-        if not full_path:
-            return ui.HTML("<b>No path provided for Path 2.</b>")
-        
-
-        if os.path.isdir(full_path):
+    @reactive.event(input.check_saving_folder_path)
+    def status_saving_folder_path():
+        """
+        Determines the status of a saving folder path provided by the user.
+    
+        Returns:
+            - A UI message indicating whether the directory exists or not.
+        """
+        full_path = input.Saving_folder_path()  # Get the folder path input from the user
+    
+        if not full_path:  # Check if the input is empty or None
+            return ui.HTML("<b>No path provided for Path 2.</b>")  # Return an error message
+    
+        if os.path.isdir(full_path):  # Check if the directory exists
             return ui.HTML(
                 f"""<span style='color:green;'><b>Directory exists:</b> {full_path}</span><br>"""
             )
-            
-        else:
+        else:  # If the directory does not exist, return an error message
             return ui.HTML(
                 f"""<span style='color:red;'><b>Directory does not exist:</b> {full_path}</span>"""
             )
         
-    # Check for the second directory
+
     @output
     @render.ui
     @reactive.event(input.check_QC_file_path)
     def status_QC_file():
-        
-        full_path = input.Path_to_QC_file()
-        if not full_path:
-            return ui.HTML("<b>No path provided for Quality Criteria file.</b>")
-        
-        dir_path, file_name = os.path.split(full_path)
-        if os.path.isfile(full_path):
-            if file_name.endswith(".py"): 
-                return ui.HTML(
-                    f"""<span style='color:green;'><b>Quality Criteria file:</b> `{full_path}` exists </span>"""
-                )
-            else:
-                return ui.HTML(
-                    f"""<span style='color:red;'><b>Warning:</b> {full_path} is not a python file.</span>
-                    """
-                )
-        else:
-            return ui.HTML(
-                f"""<span style='color:red;'><b>File :</b> {full_path} does not exist</span>"""
-            )
+         """
+         Determines the status of a Quality Criteria (QC) file provided by the user.
+     
+         Returns:
+             - A UI message indicating whether the file exists, 
+               whether it has a `.py` extension, or whether it is missing.
+         """
+         full_path = input.Path_to_QC_file()  # Get the QC file path input from the user
+     
+         if not full_path:  # Check if no path is provided
+             return ui.HTML("<b>No path provided for Quality Criteria file.</b>")  # Return an error message
+     
+         dir_path, file_name = os.path.split(full_path)  # Extract directory and file name
+     
+         if os.path.isfile(full_path):  # Check if the file exists
+             if file_name.endswith(".py"):  # Check if the file has a .py extension
+                 return ui.HTML(
+                     f"""<span style='color:green;'><b>Quality Criteria file:</b> `{full_path}` exists </span>"""
+                 )
+             else:  # If the file does not have a .py extension, return a warning
+                 return ui.HTML(
+                     f"""<span style='color:red;'><b>Warning:</b> {full_path} is not a Python file.</span>"""
+                 )
+         else:  # If the file does not exist, return an error message
+             return ui.HTML(
+                 f"""<span style='color:red;'><b>File :</b> {full_path} does not exist</span>"""
+             )
 
 
     
@@ -887,17 +915,22 @@ def server(input: Inputs, output: Outputs, session: Session):
     @render.ui
     @reactive.event(input.Check_original_file_path)
     def status_original_file_path():
-        original_file_path = input.original_file_path()
-        if not original_file_path:
-            return ui.HTML("<b>No path provided for original file path.</b>")
-        
-
-        if os.path.isdir(original_file_path):
+        """
+        Determines the status of the original file path provided by the user.
+    
+        Returns:
+            - A UI message indicating whether the directory exists or not.
+        """
+        original_file_path = input.original_file_path()  # Get the original file path from the user
+    
+        if not original_file_path:  # Check if the input is empty or None
+            return ui.HTML("<b>No path provided for original file path.</b>")  # Return an error message
+    
+        if os.path.isdir(original_file_path):  # Check if the directory exists
             return ui.HTML(
-                f"""<span style='color:green;'><b>Directory exists:</b> `{original_file_path}`</span>
-               """
+                f"""<span style='color:green;'><b>Directory exists:</b> `{original_file_path}`</span>"""
             )
-        else:
+        else:  # If the directory does not exist, return an error message
             return ui.HTML(
                 f"""<span style='color:red;'><b>Directory does not exist:</b> {original_file_path}</span>"""
             )
@@ -906,21 +939,24 @@ def server(input: Inputs, output: Outputs, session: Session):
     @render.ui
     @reactive.event(input.check_database_python_script_path)
     def status_database_script_file():
-        database_script_file = input.database_python_script_path()
-
-        if not database_script_file:
-            return ui.HTML("<b>No path provided for original file path.</b>")
+        """
+        Determines the status of the database Python script file provided by the user.
     
-        if os.path.isfile(database_script_file):
-            # When the directory exists, display a success message and a selectInput
-            
-            
-            return ui.HTML(f"""<span style='color:green;'><b>File: </b> `{database_script_file}` exists</span><br>""")
-            
-        else:
-            # When the directory doesn't exist, display an error message
+        Returns:
+            - A UI message indicating whether the file exists or not.
+        """
+        database_script_file = input.database_python_script_path()  # Get the database script path from the user
+    
+        if not database_script_file:  # Check if no path is provided
+            return ui.HTML("<b>No path provided for database script file.</b>")  # Return an error message
+    
+        if os.path.isfile(database_script_file):  # Check if the file exists
             return ui.HTML(
-                f"""<span style='color:red;'><b>File {database_script_file} does not exist:</span>"""
+                f"""<span style='color:green;'><b>File: </b> `{database_script_file}` exists</span><br>"""
+            )
+        else:  # If the file does not exist, return an error message
+            return ui.HTML(
+                f"""<span style='color:red;'><b>File:</b> {database_script_file} does not exist</span>"""
             )
     
     @output
@@ -946,13 +982,13 @@ def server(input: Inputs, output: Outputs, session: Session):
                 choices=functions  # Replace with dynamic options if needed
             )
     
-    # Check for the first directory
+    
     @output
     @render.ui
     @reactive.event(input.check_population_class_file_path)
     def status_population_class_file():
         full_path = input.population_class_file()
-        if not full_path:
+        if not full_path:# Check if no path is provided
             return ui.HTML("<b>No path provided for Population class file.</b>")
         
         dir_path, file_name = os.path.split(full_path)
@@ -1005,33 +1041,34 @@ def server(input: Inputs, output: Outputs, session: Session):
         
         
         database_name = input.database_name()
-        if not database_name : 
+        if not database_name : # Check if database's name is provided
             return ui.HTML("<span style='color:red;'><b>Database Name must be provided</b></span>")
     
         original_file_path = input.original_file_path()
-        if not original_file_path : 
+        if not original_file_path : #Check if path to original files is provided 
             return ui.HTML("<span style='color:red;'><b>Folder of original files must be provided</b></span>")
+        
         if not original_file_path.endswith(os.path.sep):
             original_file_path += os.path.sep
         
         path_to_db_script_folder = input.database_python_script_path()
-        if not path_to_db_script_folder : 
+        if not path_to_db_script_folder : # check if path to database's script is provided
             return ui.HTML("<span style='color:red;'><b>Path to database script must be provided</b></span>")
         
         database_script_path, database_script_file_name = os.path.split(path_to_db_script_folder)
         if not database_script_path.endswith(os.path.sep):
             database_script_path += os.path.sep
         database_function = input.select_database_function()
-        if not database_function : 
+        if not database_function : #Check if database's function name is provided
             return ui.HTML("<span style='color:red;'><b>Function name for database must be provided</b></span>")
         
         
         database_population_class_file = input.population_class_file()
-        if not database_population_class_file : 
+        if not database_population_class_file : #Check is database's population class table is provided
             return ui.HTML("<span style='color:red;'><b>Population class file must be provided</b></span>")
         
         database_cell_sweep_table_file = input.cell_sweep_table_file()
-        if not database_cell_sweep_table_file : 
+        if not database_cell_sweep_table_file : #Check if database's cell-Sweep table is provided
             return ui.HTML("<span style='color:red;'><b>Cell Sweep table must be provided</b></span>")
         
         stimulus_provided = input.stimulus_time_provided()
@@ -1043,11 +1080,12 @@ def server(input: Inputs, output: Outputs, session: Session):
         current_list = database_list()
         current_db_done = db_done()
         for i, d in enumerate(current_list):
+            #if a Database's information has already been provided, then delete the previous information
             if d.get("database_name") == database_name:
                 del current_list[i]
                 break  # Exit loop after removing the first match
                 
-        
+        #Add new database's information 
         db_list = {
             "database_name" : database_name,
             "original_file_directory" :original_file_path,
@@ -1087,17 +1125,17 @@ def server(input: Inputs, output: Outputs, session: Session):
         DB_parameters = database_list()
         json_file_path = input.json_file_path()
         
-        if not json_file_path : 
+        if not json_file_path :  #Check that the JSON config file is provided
             return ui.HTML("<span style='color:red;'><b>Saving file for JSON config file must be provided</b></span>")
         
         
-        Saving_folder = input.Saving_folder()
+        Saving_folder = input.Saving_folder_path()
         
-        if not Saving_folder : 
+        if not Saving_folder : #Check that the saving folder is indicated
             return ui.HTML("<span style='color:red;'><b>Saving folder for analysis must be provided</b></span>")
         
         Path_to_QC_file = input.Path_to_QC_file()
-        if not Path_to_QC_file : 
+        if not Path_to_QC_file : # Check that the script containing quality criterias is provided
             return ui.HTML("<span style='color:red;'><b>Quality Criteria Python Script must be provided</b></span>")
         
         if not Saving_folder.endswith(os.path.sep):
@@ -1113,19 +1151,29 @@ def server(input: Inputs, output: Outputs, session: Session):
         # Serializing json
         configuration_file_json = json.dumps(configuration_file, indent=4)
          
-        # Writing to sample.json
+        # Writing to config json file
         with open(json_file_path, "w") as outfile:
             outfile.write(configuration_file_json)
         
         return ui.HTML(f"<span style='color:green;'><b>JSON file saved successfully to:</b> {json_file_path}</span>")
         
-    ################## Run Analysis
+    
+    
+
     
         
     @output
     @render.text
     @reactive.event(input.run_analysis)
     def script_output():
+        """
+        This function runs the analysis according to the JSON configuration file, as well as the parameters defined by the users (CPU cores, overwriting of exisiting files,... )
+        The function displys the progression of the analysis in the GUI
+        
+        The function returns the list of cell id for which the analysis failed
+        
+
+        """
         # Get inputs
         problem_cell = []
 
@@ -1136,6 +1184,7 @@ def server(input: Inputs, output: Outputs, session: Session):
             
             config_df = import_json_config_file(json_config_file)
             
+            #GEt nb of CPU cores to use
             nb_of_workers_to_use = int(input.n_CPU())
             if nb_of_workers_to_use == 0:
                 nb_of_workers_to_use = 1
@@ -1207,10 +1256,16 @@ def server(input: Inputs, output: Outputs, session: Session):
     
     @output
     @render.ui
-    @reactive.event(input.check_saving_summaryfolder)
-    def summary_folder_status():
+    @reactive.event(input.check_saving_summary_folder_path)
+    def summary_folder_path_status():
+        """
+        This functions checks if the saving path for the summary tables is correctly provided
+
+        
+        """
+        
         full_path = input.summary_folder_path()
-        if not full_path:
+        if not full_path: 
             return ui.HTML("<b>No path provided for Path 1.</b>")
         
         
@@ -1226,8 +1281,16 @@ def server(input: Inputs, output: Outputs, session: Session):
     
     @output
     @render.text
-    @reactive.event(input.summarise_analysis)
+    @reactive.event(input.summarize_analysis)
     def summarize_analysis_output():
+        """
+        This function summarizes the analysis performed for the cells indicated in the JSON configuration file
+        One summary tbale is saved for each output duration for each response type (both features and fit parameters), as well as for adaptation, and linear values
+        A general Full population class table is also created
+        
+
+        """
+        
         if not input.json_file_input():
             return "No file uploaded."
         else:
@@ -1239,6 +1302,7 @@ def server(input: Inputs, output: Outputs, session: Session):
         if not saving_path.endswith(os.path.sep):
             saving_path += os.path.sep
 
+        # Initialize the different dataframes with unit lines and column names.
         unit_line=pd.DataFrame(['--','--','--','Hz/pA','pA','Hz','pA','Hz', "pA"]).T
         Full_feature_table=pd.DataFrame(columns=['Cell_id','Obs','I_O_NRMSE','Gain','Threshold','Saturation_Frequency','Saturation_Stimulus','Response_Fail_Frequency','Response_Fail_Stimulus','Response_type',"Output_Duration"])
         
@@ -1271,21 +1335,27 @@ def server(input: Inputs, output: Outputs, session: Session):
         problem_cell=[]
         problem_df = pd.DataFrame(columns = ['Cell_id','Error_message'])
         
-        Full_population_calss_table = pd.DataFrame()
+        #Create the Full population class table
+        Full_population_class_table = pd.DataFrame()
         
         for line in config_json_file.index:
             current_db_population_class_table = pd.read_csv(config_json_file.loc[line,'db_population_class_file'])
-            Full_population_calss_table= pd.concat([Full_population_calss_table,current_db_population_class_table],ignore_index = True)
-        Full_population_calss_table=Full_population_calss_table.astype({'Cell_id':'str'})
-        cell_id_list = Full_population_calss_table.loc[:,'Cell_id'].unique()
+            Full_population_class_table= pd.concat([Full_population_class_table,current_db_population_class_table],ignore_index = True)
+        Full_population_class_table=Full_population_class_table.astype({'Cell_id':'str'})
+        cell_id_list = Full_population_class_table.loc[:,'Cell_id'].unique()
         
         i=1
         start_time = time.time()
+        
+        #Gather analysis for all cells in Full population class table
         with ui.Progress(min=0, max=len(cell_id_list)) as progress:
-            for cell_id in cell_id_list:
+            for cell_id in cell_id_list: # For each cell
                 try:
-                    current_DB = Full_population_calss_table.loc[Full_population_calss_table['Cell_id']==cell_id,'Database'].values[0]
+                    #Get the database from which the cell comes from, and the corresponding information
+                    current_DB = Full_population_class_table.loc[Full_population_class_table['Cell_id']==cell_id,'Database'].values[0]
                     config_line = config_json_file.loc[config_json_file['database_name']==current_DB,:]
+                    
+                    #Open the cell analysis file
                     cell_dict = ordifunc.read_cell_file_h5(str(cell_id),config_line,['Sweep analysis','Firing analysis','Processing_report', "Sweep QC"])
                     sweep_info_table = cell_dict['Sweep_info_table']
                     cell_fit_table = cell_dict['Cell_fit_table']
@@ -1294,25 +1364,25 @@ def server(input: Inputs, output: Outputs, session: Session):
                     cell_adaptation_table = cell_dict['Cell_Adaptation']
                     sweep_QC_table = cell_dict['Sweep_QC_table']
                     sweep_info_QC_table = pd.merge(sweep_info_table, sweep_QC_table.loc[:,['Passed_QC', "Sweep"]], on = "Sweep")
+                    
+                    #Keep only sweeps that passed the QC analysis
                     sub_sweep_info_QC_table = sweep_info_QC_table.loc[sweep_info_QC_table['Passed_QC'] == True,:]
                     sub_sweep_info_QC_table['Protocol_id'] =  sub_sweep_info_QC_table['Protocol_id'].astype(str)
                     
-                    sub_sweep_info_QC_table_SS_potential = sub_sweep_info_QC_table.dropna(subset=['SS_potential_mV'])
-                    SS_potential_mV_list = list(sub_sweep_info_QC_table_SS_potential.loc[:,'SS_potential_mV'])
-                    Stim_amp_pA_list = list(sub_sweep_info_QC_table_SS_potential.loc[:,'Stim_SS_pA'])
+                    # sub_sweep_info_QC_table_SS_potential = sub_sweep_info_QC_table.dropna(subset=['SS_potential_mV'])
+                    # SS_potential_mV_list = list(sub_sweep_info_QC_table_SS_potential.loc[:,'SS_potential_mV'])
+                    # Stim_amp_pA_list = list(sub_sweep_info_QC_table_SS_potential.loc[:,'Stim_SS_pA'])
                     
 
-                    IR_regression_fit = ordifunc.compute_cell_input_resistance(cell_dict)
-                    Cell_IR = IR_regression_fit[0]
+                    IR_mean_SD = ordifunc.compute_cell_input_resistance(cell_dict)
+                    Cell_IR = IR_mean_SD[0]
+                    IR_SD = IR_mean_SD[1]
                     
-
-                    IR_SD = np.nanstd(sub_sweep_info_QC_table['Input_Resistance_GOhms'])
                     if Cell_IR <=0:
                         Cell_IR = np.nan
                         IR_SD = np.nan
                    
                     Time_cst_mean, Time_cst_SD = ordifunc.compute_cell_time_constant(cell_dict)
-                    
                     
                     
                     Resting_potential_mean, Resting_potential_SD = ordifunc.compute_cell_resting_potential(cell_dict)
@@ -1333,7 +1403,8 @@ def server(input: Inputs, output: Outputs, session: Session):
                             output_duration_list=response_duration_dictionnary[response_type]
                             for output_duration in output_duration_list:
                                 I_O_obs=cell_fit_table.loc[(cell_fit_table['Response_type']==response_type )& (cell_fit_table['Output_Duration']==output_duration),"I_O_obs"]
-                                if len(I_O_obs)!=0:
+                                
+                                if len(I_O_obs)!=0: #If analysis has been coreclty performed for this cell
                                     Gain,Threshold,Saturation_Frequency,Saturation_Stimulus,Response_Failure_Frequency,Response_Failure_Stimulus = np.array(cell_feature_table.loc[(cell_feature_table['Response_type']==response_type )&
                                                                                                                                                (cell_feature_table['Output_Duration']==output_duration),
                                                                                                                                         ["Gain","Threshold","Saturation_Frequency","Saturation_Stimulus","Response_Fail_Frequency", "Response_Fail_Stimulus"]]).tolist()[0]
@@ -1342,7 +1413,8 @@ def server(input: Inputs, output: Outputs, session: Session):
                                     Hill_Half_cst, Hill_amplitude, Hill_coef, Hill_x0, Output_Duration, Response_type, Sigmoid_k,Sigmoid_x0 = np.array(cell_fit_table.loc[(cell_fit_table['Response_type']==response_type )&
                                                                                                                                                (cell_fit_table['Output_Duration']==output_duration),
                                                                                                                                         ["Hill_Half_cst", "Hill_amplitude", "Hill_coef", "Hill_x0", "Output_Duration", "Response_type", "Sigmoid_k","Sigmoid_x0"]]).tolist()[0]
-                                else:
+                                
+                                else: # If analysis failed
                                     I_O_obs="No_I_O_Adapt_computed"
                                     empty_array = np.empty(6)
                                     empty_array[:] = np.nan
@@ -1356,8 +1428,9 @@ def server(input: Inputs, output: Outputs, session: Session):
                                 if Gain<=0:
                                     Gain=np.nan
 
-                                    
-                                    
+                                
+
+                                #Concatenate analysis results (failed or not)                                    
                                 new_line=pd.DataFrame([str(cell_id),I_O_obs,Gain,Threshold,Saturation_Frequency,Saturation_Stimulus,response_type,output_duration]).T
                                 new_line.columns=Full_feature_table.columns
                                 Full_feature_table = pd.concat([Full_feature_table,new_line],ignore_index=True)
@@ -1473,10 +1546,10 @@ def server(input: Inputs, output: Outputs, session: Session):
             processing_time_table.to_csv(str(saving_path+'Full_Processing_Times.csv'))
             Adaptation_table.to_csv(f'{saving_path}Full_Adaptation_Table_Time_based_500ms.csv')
             problem_df.to_csv(f'{saving_path}Problem_report.csv')
-            for col in Full_population_calss_table.columns:
+            for col in Full_population_class_table.columns:
                 if "Unnamed" in col:
-                    Full_population_calss_table = Full_population_calss_table.drop(columns=[col])
-            Full_population_calss_table.to_csv(f'{saving_path}Full_Population_Class.csv')
+                    Full_population_class_table = Full_population_class_table.drop(columns=[col])
+            Full_population_class_table.to_csv(f'{saving_path}Full_Population_Class.csv')
             print("Done")
             return  f'Analysis Summary done. Problem with cells {problem_cell}'
     
@@ -1484,7 +1557,7 @@ def server(input: Inputs, output: Outputs, session: Session):
     ################## Cell Visualization 
     @reactive.Effect
     @reactive.event(input.JSON_config_file)
-    def _():
+    def _(): #Update automatically the list of cell id after the config file has been uploaded
         
         config_table = get_config_json_table()
         saving_folder = config_table.loc[0,"path_to_saving_file"]
@@ -1503,18 +1576,18 @@ def server(input: Inputs, output: Outputs, session: Session):
         
     @reactive.Effect
     @reactive.event(input.Update_cell_btn)
-    def sweep_list():
+    def update_variables_lists(): #Update lists of sweep, output duration... throughout the app
         
         if input.JSON_config_file() and input.Cell_file_select() :
             cells_dict = get_cell_tables()
             Sweep_info_table = cells_dict["Sweep_info_table"]
-            #Sweep_info_table = cells[4]
             sweep_list = list(Sweep_info_table.loc[:,"Sweep"])
+            
             ui.update_selectize("Sweep_selected" ,choices=sweep_list)
             ui.update_selectize("Sweep_selected_in_progress" ,choices=sweep_list)
             ui.update_selectize("Sweep_selected_Linear_analysis", choices = sweep_list)
             cell_fit_table = cells_dict["Cell_fit_table"]
-            #cell_fit_table = cells[6]
+
             sub_cell_fit_table = cell_fit_table.loc[cell_fit_table['Response_type'] == 'Time_based',:]
             time_output_duration = list(sub_cell_fit_table.loc[:,'Output_Duration'].unique())
 
@@ -1535,28 +1608,25 @@ def server(input: Inputs, output: Outputs, session: Session):
             ui.update_select('Adaptation_feature_to_display', choices=validated_features)
             
     @reactive.Effect
-    @reactive.event(input.Update_cell_btn, input.Firing_response_type_new)
+    @reactive.event(input.Update_cell_btn, input.Firing_response_type)
     def update_IO_output_duration_list():
         
         if input.JSON_config_file() and input.Cell_file_select() :
             cell_dict=get_cell_tables()
             cell_fit_table = cell_dict['Cell_fit_table']
-            response_type = input.Firing_response_type_new()
-            #cell_fit_table = cells[6]
+            response_type = input.Firing_response_type()
+
             sub_cell_fit_table = cell_fit_table.loc[cell_fit_table['Response_type'] == response_type,:]
             sub_cell_fit_table = sub_cell_fit_table[sub_cell_fit_table["I_O_obs"].isin(['Hill','Hill-Sigmoid'])]
             time_output_duration = list(sub_cell_fit_table.loc[:,'Output_Duration'].unique())
             
-            if input.Firing_response_type_new()=='Time_based':
+            if input.Firing_response_type()=='Time_based':
                 time_output_duration = [float(x) for x in time_output_duration]
                 
             else:
                 
                 time_output_duration = [int(float(x)) for x in time_output_duration]
             
-            
-            
-
             
             ui.update_select(
                 "Firing_output_duration_new",
@@ -1578,8 +1648,8 @@ def server(input: Inputs, output: Outputs, session: Session):
             Sweep_info_table = cell_dict['Sweep_info_table']
             Sweep_QC_table = cell_dict['Sweep_QC_table']
             
-            Firing_response_type_new = input.Firing_response_type_new()
-            if Firing_response_type_new=='Time_based':
+            Firing_response_type = input.Firing_response_type()
+            if Firing_response_type=='Time_based':
                 
                 Firing_output_duration_new = float(input.Firing_output_duration_new())
             else:
@@ -1587,13 +1657,13 @@ def server(input: Inputs, output: Outputs, session: Session):
             
             
             
-            Test_Gain = Cell_feature_table.loc[(Cell_feature_table['Response_type']==Firing_response_type_new)&
+            Test_Gain = Cell_feature_table.loc[(Cell_feature_table['Response_type']==Firing_response_type)&
                                                             (Cell_feature_table['Output_Duration']==Firing_output_duration_new), 'Gain'].values[0]
             
             
-            if not np.isnan(Test_Gain):
-                stim_freq_table = fir_an.get_stim_freq_table(Full_SF_table, Sweep_info_table, Sweep_QC_table, Firing_output_duration_new, Firing_response_type_new)
-                plot_list = fir_an.get_IO_features_NEW_TEST(stim_freq_table, Firing_response_type_new, Firing_output_duration_new, do_plot=True)
+            if not np.isnan(Test_Gain): # if IO analysis was successful, update plotlist
+                stim_freq_table = fir_an.get_stim_freq_table(Full_SF_table, Sweep_info_table, Sweep_QC_table, Firing_output_duration_new, Firing_response_type)
+                plot_list = fir_an.get_IO_features(stim_freq_table, Firing_response_type, Firing_output_duration_new, do_plot=True)
                 
 
                 #Update choice input 
@@ -1605,7 +1675,7 @@ def server(input: Inputs, output: Outputs, session: Session):
     
     @reactive.Calc
     @reactive.event(input.Update_cell_btn)
-    def get_cell_tables():
+    def get_cell_tables(): # function to open cell files
 
         cell_id = input.Cell_file_select()
         config_json_input = input.JSON_config_file()
@@ -1614,7 +1684,7 @@ def server(input: Inputs, output: Outputs, session: Session):
             saving_folder = config_table.loc[0,"path_to_saving_file"]
             cell_file_path = str(saving_folder+str(cell_id))
             
-            #Metadata_table = ordifunc.read_cell_file_h5(cell_file_path, "--",selection=["Metadata"])
+            
             Metadata_table = ordifunc.read_cell_file_h5(cell_file_path, "--",selection=["Metadata"])
             
             Database = Metadata_table['Database'].values[0]
@@ -1624,10 +1694,10 @@ def server(input: Inputs, output: Outputs, session: Session):
             cell_id=cell_id.replace('Cell_','')
             cell_id = cell_id.replace('.h5','')
 
-            #Full_TVC_table, Full_SF_dict_table, Full_SF_table, Metadata_table, sweep_info_table, Sweep_QC_table, cell_fit_table, cell_feature_table,Processing_report_df = ordifunc.read_cell_file_h5(cell_id, current_config_line,selection=["All"])
+            
             cell_dict = ordifunc.read_cell_file_h5(cell_id, current_config_line,selection=["All"])
             return cell_dict
-            #return Full_TVC_table, Full_SF_dict_table, Full_SF_table, Metadata_table, sweep_info_table, Sweep_QC_table, cell_fit_table, cell_feature_table,Processing_report_df
+            
         
         
     @reactive.Calc
@@ -1648,7 +1718,7 @@ def server(input: Inputs, output: Outputs, session: Session):
             return config_df
     @output
     @render.table
-    def config_json_table():
+    def config_json_table(): #Diplay the config json file
         config_table = get_config_json_table()
         
         return config_table
@@ -1663,7 +1733,6 @@ def server(input: Inputs, output: Outputs, session: Session):
                 
             cell_dict = get_cell_tables()
             processing_time_table = cell_dict["Processing_table"] 
-            #processing_time_table = cells[-1]
             return processing_time_table
         
     @output
@@ -1681,7 +1750,7 @@ def server(input: Inputs, output: Outputs, session: Session):
             Metadata_table = Metadata_table.T
             Metadata_table = Metadata_table.reset_index(drop=False)
             Metadata_table.columns = [" Metadata", " "]
-            #processing_time_table = cells[-1]
+
             return Metadata_table
         
     @output
@@ -1692,27 +1761,21 @@ def server(input: Inputs, output: Outputs, session: Session):
 
                 
             cell_dict = get_cell_tables()
-            Sweep_info_table = cell_dict["Sweep_info_table"]
-            Sweep_QC_table = cell_dict["Sweep_QC_table"]
-            sweep_info_QC_table = pd.merge(Sweep_info_table, Sweep_QC_table.loc[:, ['Passed_QC', "Sweep"]], on="Sweep")
-            sub_sweep_info_QC_table = sweep_info_QC_table.loc[sweep_info_QC_table['Passed_QC'] == True, :]
-            sub_sweep_info_QC_table['Protocol_id'] =  sub_sweep_info_QC_table['Protocol_id'].astype(str)
             
-            sub_sweep_info_QC_table_SS_potential = sub_sweep_info_QC_table.dropna(subset=['SS_potential_mV'])
-            SS_potential_mV_list = list(sub_sweep_info_QC_table_SS_potential['SS_potential_mV'])
-            Stim_amp_pA_list = list(sub_sweep_info_QC_table_SS_potential['Stim_SS_pA'])
+            #Same code as in ordifunc.create_summary_tables()
+            Cell_IR, _ = ordifunc.compute_cell_input_resistance(cell_dict)
             
-            # Perform linear regression to get Input Resistance and intercept
-            #IR_regression_fit = fir_an.linear_fit(Stim_amp_pA_list, SS_potential_mV_list)[0]
-            IR_regression_fit = ordifunc.compute_cell_input_resistance(cell_dict)
-            Cell_IR = IR_regression_fit[0]
+            if Cell_IR <=0:
+                Cell_IR = np.nan
+
             
-            Time_cst_mean, Time_cst_SD = ordifunc.compute_cell_time_constant(cell_dict)
+            Time_cst_mean, _ = ordifunc.compute_cell_time_constant(cell_dict)
+            
+            Resting_potential_mean, _ = ordifunc.compute_cell_resting_potential(cell_dict)
+            
+            
+            
             Capacitance = Time_cst_mean/Cell_IR
-            
-            Resting_potential_mean, Resting_potential_SD = ordifunc.compute_cell_resting_potential(cell_dict)
-            
-            
             
             
             Linear_table = pd.DataFrame({'Input Resistance GΩ':[Cell_IR],
@@ -1759,9 +1822,6 @@ def server(input: Inputs, output: Outputs, session: Session):
             return cell_Adaptation
         
         
-        
-        
-    
         
     @output
     @render_widget
@@ -1893,8 +1953,7 @@ def server(input: Inputs, output: Outputs, session: Session):
                 autosize=True,
                 xaxis_title="Stimulus amplitude (pA)", 
                 yaxis_title='Steady State potential (mV)',
-                template="plotly_white"
-            )
+                template="plotly_white")
             
             return figure
 
@@ -1905,8 +1964,6 @@ def server(input: Inputs, output: Outputs, session: Session):
         if input.Sweep_selected() :
             Do_linear_analysis_table, TC_plot_dict, R_in_plot_dict, properties_table, TC_table = get_sweep_linear_properties()
             R_in_plot = sw_an.plot_estimate_input_resistance_and_resting_potential(R_in_plot_dict, sampling_step = 1, TACO_App=True)
-            
-    
             return R_in_plot
     
     
@@ -1918,7 +1975,6 @@ def server(input: Inputs, output: Outputs, session: Session):
         if input.Sweep_selected() :
             Do_linear_analysis_table, TC_plot_dict, R_in_plot_dict, properties_table, TC_table = get_sweep_linear_properties()
             TC_plotly = sw_an.plot_fit_membrane_time_cst_new(TC_plot_dict, TACO_App=True)
-
             return TC_plotly
         
         
@@ -1928,9 +1984,7 @@ def server(input: Inputs, output: Outputs, session: Session):
         
         if input.Sweep_selected() :
             Do_linear_analysis_table, TC_plot_dict, R_in_plot_dict, properties_table, TC_table = get_sweep_linear_properties()
-
             styled_table = Do_linear_analysis_table.style.apply(highlight_condition, subset=pd.IndexSlice["Condition Respected", :])
-            
             return styled_table
         
     @output
@@ -1939,8 +1993,6 @@ def server(input: Inputs, output: Outputs, session: Session):
         
         if input.Sweep_selected() :
             Do_linear_analysis_table, TC_plot_dict, R_in_plot_dict, properties_table, TC_table = get_sweep_linear_properties()
-            
-
             return properties_table.T
         
     @output
@@ -1951,9 +2003,6 @@ def server(input: Inputs, output: Outputs, session: Session):
             TC_table = TC_table.T
             TC_table = TC_table.style.set_table_attributes('class="dataframe shiny-table table w-auto"').apply(highlight_rmse_a)
             return TC_table
-        
-        
-        
         
         
     @output
@@ -1969,23 +2018,8 @@ def server(input: Inputs, output: Outputs, session: Session):
             sub_sweep_info_QC_table['Protocol_id'] =  sub_sweep_info_QC_table['Protocol_id'].astype(str)
             
             sub_sweep_info_QC_table_Holding_potential = sub_sweep_info_QC_table.dropna(subset=['Holding_potential_mV'])
-            Holding_potential_mV = list(sub_sweep_info_QC_table_Holding_potential['Holding_potential_mV'])
-            Holding_current_list = list(sub_sweep_info_QC_table_Holding_potential['Holding_current_pA'])
             
-            # Perform linear regression to get slope and intercept
-            slope, Resting_potential_regression_fit = fir_an.linear_fit(Holding_current_list, Holding_potential_mV)
             
-            # Create regression line points
-            min_current = min(Holding_current_list)
-            max_current = max(Holding_current_list)
-            regression_line_x = np.arange(min_current, max_current, 0.01)
-            
-            regression_line_y = slope * regression_line_x + Resting_potential_regression_fit
-                                 
-            
-            # Get the resting potential point
-            resting_potential_x = 0  # Assuming the resting potential corresponds to 0 current
-            resting_potential_y = Resting_potential_regression_fit
             
             # Create a scatter plot with color based on 'Protocol_id'
             scatter_plot = px.scatter(
@@ -2004,25 +2038,8 @@ def server(input: Inputs, output: Outputs, session: Session):
             # Create a Plotly figure and update layout
             figure = go.Figure(data=scatter_plot.data)
         
-            # Add the linear regression line (without showing in the legend)
-            figure.add_trace(go.Scatter(
-                x=regression_line_x, 
-                y=regression_line_y, 
-                mode='lines', 
-                line=dict(color='blue', dash='dash'),
-                showlegend=True  # Exclude from legend
-            ))
             
-            # Add the resting potential point (with legend)
-            figure.add_trace(go.Scatter(
-                x=[resting_potential_x], 
-                y=[resting_potential_y], 
-                mode='markers',
-                marker=dict(color='red', size=10), 
-                text=[f'Resting Potential: {resting_potential_y:.2f} mV'],  # Display value in legend
-                textposition='top right',
-                name=f'Resting Potential: {resting_potential_y:.2f} mV'
-            ))
+            
             
             # Update layout
             figure.update_layout(
@@ -2113,7 +2130,6 @@ def server(input: Inputs, output: Outputs, session: Session):
             Sweep_info_table = cell_dict["Sweep_info_table"]
             Sweep_info_table['Bridge_Error_extrapolated'] =  Sweep_info_table['Bridge_Error_extrapolated'].astype(str)
             Sweep_info_table = Sweep_info_table.replace(np.nan, 'NaN')
-            print(Sweep_info_table)
             return Sweep_info_table
     
     @output
@@ -2122,12 +2138,8 @@ def server(input: Inputs, output: Outputs, session: Session):
     def Sweep_spike_features_table():
         if input.Cell_file_select() :
             cell_dict = get_cell_tables()
-
             Full_SF_table = cell_dict['Full_SF_table']
-
-
             spike_table = pd.DataFrame(Full_SF_table.loc[Full_SF_table['Sweep']==input.Sweep_selected(),"SF"].values[0])
-            
             return spike_table
     
     
@@ -2136,7 +2148,7 @@ def server(input: Inputs, output: Outputs, session: Session):
     @reactive.event(input.Update_cell_btn,input.Sweep_selected,input.BE_correction,input.Superimpose_BE_Correction)
     def Sweep_spike_plotly():
         if input.Sweep_selected() :
-            # Sample data
+
             cell_dict = get_cell_tables()
             Full_TVC_table = cell_dict['Full_TVC_table']
             Full_SF_table = cell_dict['Full_SF_table']
@@ -2160,20 +2172,22 @@ def server(input: Inputs, output: Outputs, session: Session):
             
             
             current_TVC_table = ordifunc.get_filtered_TVC_table(Full_TVC_table,current_sweep)
-            if input.BE_correction()==True:
+            
+            if input.BE_correction()==True: #if asked, correct the potential trace by the bridge error
                 Full_SF_dict_table = cell_dict['Full_SF_dict_table']
                 Full_SF_table = sp_an.create_Full_SF_table(Full_TVC_table, Full_SF_dict_table, cell_sweep_info_table = Sweep_info_table,BE_correct=True,)
             else:
                 Full_SF_dict_table = cell_dict['Full_SF_dict_table']
                 Full_SF_table = sp_an.create_Full_SF_table(Full_TVC_table, Full_SF_dict_table, cell_sweep_info_table = Sweep_info_table,BE_correct=False,)
             
-            
             fig = make_subplots(rows=2, cols=1, shared_xaxes=True, subplot_titles=("Membrane Potential plot", "Input Current plot"))
             
             if input.BE_correction() == True:
                 if not np.isnan(BE):
                     current_TVC_table.loc[:,'Membrane_potential_mV'] = current_TVC_table.loc[:,'Membrane_potential_mV']-BE*current_TVC_table.loc[:,'Input_current_pA']
+                
                 fig.add_trace(go.Scatter(x=current_TVC_table['Time_s'], y=current_TVC_table['Membrane_potential_mV'], mode='lines', name='Membrane potential BE Corrected', line=dict(color=color_dict['Membrane potential'], width =1 )), row=1, col=1)
+                
                 if input.Superimpose_BE_Correction() == True:
                     current_TVC_table_second = ordifunc.get_filtered_TVC_table(Full_TVC_table,current_sweep)
                     fig.add_trace(go.Scatter(x=current_TVC_table_second['Time_s'], y=current_TVC_table_second['Membrane_potential_mV'], mode='lines', name='Membrane potential original', line=dict(color=color_dict['Membrane potential original'])), row=1, col=1)
@@ -2181,7 +2195,7 @@ def server(input: Inputs, output: Outputs, session: Session):
             
             else: 
                 fig.add_trace(go.Scatter(x=current_TVC_table['Time_s'], y=current_TVC_table['Membrane_potential_mV'], mode='lines', name='Membrane potential ', line=dict(color=color_dict['Membrane potential'], width =1)), row=1, col=1)
-            # Plot for Membrane_potential_mV vs Time_s from SF_table if not empty
+            
             
             SF_table = Full_SF_table.loc[current_sweep, "SF"]
             if not SF_table.empty:
@@ -2198,9 +2212,6 @@ def server(input: Inputs, output: Outputs, session: Session):
             
             # Update layout
             
-            
-            # fig.update_layout(height=800, showlegend=True, title_text="TVC and SF Plots", )
-            
             fig.update_layout(
             height=800,
             showlegend=True,
@@ -2213,137 +2224,7 @@ def server(input: Inputs, output: Outputs, session: Session):
     
      
             return fig
-            
-                    
-   
-   
-    # @output
-    # @render.plot()
-    # @reactive.event(input.Update_cell_btn,input.Sweep_selected,input.BE_correction,input.Superimpose_BE_Correction,input.Update_plot_parameters)
-    # def Sweep_spike_plot():
-    #     if input.Sweep_selected() :
-
-    #         cell_dict = get_cell_tables()
-    #         Full_TVC_table = cell_dict['Full_TVC_table']
-    #         Full_SF_table = cell_dict['Full_SF_table']
-    #         Sweep_info_table = cell_dict["Sweep_info_table"]
-    #         current_sweep = input.Sweep_selected()
-            
-    #         current_TVC_table = ordifunc.get_filtered_TVC_table(Full_TVC_table,current_sweep)
-            
-    #         if input.use_custom_x_axis() == False:
-            
-    #             stim_start_time = Sweep_info_table.loc[Sweep_info_table['Sweep'] == current_sweep,'Stim_start_s'].values[0]
-    #             stim_start_time -= .1
-    #             stim_end_time = Sweep_info_table.loc[Sweep_info_table['Sweep'] == current_sweep,'Stim_end_s'].values[0]
-    #             stim_end_time += .1
-    #         else:
-    #             stim_start_time = input.SF_plot_min()
-    #             stim_end_time = input.SF_plot_max()
-                
-            
-    #         current_TVC_table = current_TVC_table.loc[current_TVC_table['Time_s'] >= (stim_start_time), :]
-    #         current_TVC_table = current_TVC_table.loc[current_TVC_table['Time_s'] <= (stim_end_time), :]
-            
-
-            
-
-    #         if input.BE_correction():
-                
-    #             BE = Sweep_info_table.loc[Sweep_info_table['Sweep'] == current_sweep,'Bridge_Error_GOhms'].values[0]
-    #             #Full_SF_dict_table = cells[1]
-    #             Full_SF_dict_table = cell_dict['Full_SF_dict_table']
-    #             Full_SF_table = sp_an.create_Full_SF_table(Full_TVC_table, Full_SF_dict_table, cell_sweep_info_table = Sweep_info_table,BE_correct=True,)
-    #             current_SF_table = Full_SF_table.loc[str(current_sweep),'SF']
-                
-    #             if input.Superimpose_BE_Correction() :
-    #                 original_TVC_table = current_TVC_table.copy()
-    #                 original_TVC_table.loc[:,'Membrane_potential_mV'] -= BE*original_TVC_table.loc[:,'Input_current_pA']
-    #                 BE_voltage_table = original_TVC_table.loc[:,['Time_s','Membrane_potential_mV']]
-    #                 BE_voltage_table.loc[:,'Legend']="Membrane potential BE Corrected"
-    #                 BE_voltage_table.columns = ['Time_s', 'Value','Legend']
-    #                 BE_voltage_table['Plot'] = 'Membrane_potential_mV'
-                    
-    #                 Potential_table = current_TVC_table.loc[:,['Time_s','Membrane_potential_mV']]
-    #                 Potential_table.loc[:,'Legend']="Membrane potential original"
-    #                 Potential_table.columns = ['Time_s', 'Value','Legend']
-    #                 Potential_table['Plot'] = 'Membrane_potential_mV'
-                    
-    #             else:
-    #                 current_TVC_table.loc[:,'Membrane_potential_mV'] -= BE*current_TVC_table.loc[:,'Input_current_pA']
-    #                 Potential_table = current_TVC_table.loc[:,['Time_s','Membrane_potential_mV']]
-    #                 Potential_table.loc[:,'Legend']="Membrane potential BE Corrected"
-    #                 Potential_table.columns = ['Time_s', 'Value','Legend']
-    #                 Potential_table['Plot'] = 'Membrane_potential_mV'
-
-    #         else:
-
-    #             current_SF_table = Full_SF_table.loc[str(current_sweep),'SF']
-    #             Potential_table = current_TVC_table.loc[:,['Time_s','Membrane_potential_mV']]
-    #             Potential_table.loc[:,'Legend']="Membrane potential original"
-    #             Potential_table.columns = ['Time_s', 'Value','Legend']
-    #             Potential_table['Plot'] = 'Membrane_potential_mV'
-            
-            
-            
-    #         Current_table = current_TVC_table.loc[:,['Time_s','Input_current_pA']]
-    #         Current_table.loc[:,'Legend']="Input current"
-    #         Current_table.columns = ['Time_s', 'Value','Legend']
-    #         Current_table['Plot'] = 'Input_current_pA'
-            
-            
-            
-    #         New_TVC_Table = pd.concat([Potential_table,Current_table], axis = 0, ignore_index = True)
-    #         if input.Superimpose_BE_Correction() and input.BE_correction() :
-    #             New_TVC_Table = pd.concat([New_TVC_Table,BE_voltage_table], axis = 0, ignore_index = True)
-    #         New_TVC_Table['Plot'] = New_TVC_Table['Plot'].astype('category')
-    #         New_TVC_Table['Plot'] = New_TVC_Table['Plot'].cat.reorder_categories(['Membrane_potential_mV', 'Input_current_pA'])
-    #         color_dict = {'Input_current_pA' : 'black',
-    #                       'Membrane potential original' : 'black',
-    #                       'Membrane potential BE Corrected' : "red",
-    #                       'Threshold':"#a2c5fc",
-    #                       "Upstroke" : "#0562f5", 
-    #                       "Peak" : "#2f0387",
-    #                       "Downstroke":"#9f02e8",
-    #                       "Fast_Trough" : "#c248fa",
-    #                       "fAHP":"#d991fa",
-    #                       "Trough":'#fc3873',
-    #                       "Slow_Trough" :  "#96022e"
-
-    #             }
-            
-    #         New_TVC_Table = New_TVC_Table.astype({'Time_s':'float','Value':'float'})
-    #         SF_plot = p9.ggplot(New_TVC_Table,p9.aes(x='Time_s',y='Value',color='Legend'))+p9.geom_line()+p9.scale_color_manual(color_dict)
-    #         if current_SF_table.shape[0]>=1:
-    #             current_SF_table = current_SF_table.loc[(current_SF_table['Feature']!='Spike_width_at_half_heigth')&(current_SF_table['Feature']!='Spike_heigth'),:]
-    #             current_SF_table_voltage = current_SF_table.loc[:,['Time_s','Membrane_potential_mV','Feature']]
-    #             current_SF_table_voltage.columns=['Time_s','Value','Feature']
-    #             current_SF_table_voltage['Plot'] = 'Membrane_potential_mV'
-                
-    #             current_SF_table_stim = current_SF_table.loc[:,['Time_s','Input_current_pA','Feature']]
-    #             current_SF_table_stim.columns=['Time_s','Value','Feature']
-    #             current_SF_table_stim['Plot'] = 'Input_current_pA'
-                
-    #             current_SF_table_voltage = pd.concat([current_SF_table_voltage,current_SF_table_stim], axis = 0, ignore_index = True)
-
-    #             current_SF_table_voltage['Plot'] = current_SF_table_voltage['Plot'].astype('category')
-    #             current_SF_table_voltage['Plot'] = current_SF_table_voltage['Plot'].cat.reorder_categories(['Membrane_potential_mV', 'Input_current_pA'])
-                
-                
-    #             current_SF_table_voltage = current_SF_table_voltage.loc[current_SF_table_voltage['Time_s'] >= (stim_start_time), :]
-    #             current_SF_table_voltage = current_SF_table_voltage.loc[current_SF_table_voltage['Time_s'] <= (stim_end_time), :]
-    #             current_SF_table_voltage = current_SF_table_voltage[current_SF_table_voltage['Feature'].isin(input.Spike_Feature_to_display())]
-    #             current_SF_table_voltage=current_SF_table_voltage.astype({'Time_s':'float','Value':'float'})
-    #             if input.Spike_feature_representation() == 'Point':
-    #                 SF_plot+=p9.geom_point(current_SF_table_voltage,p9.aes(x='Time_s',y='Value',color='Feature'))
-    #             elif input.Spike_feature_representation() == 'Line':
-    #                 SF_plot+=p9.geom_line(current_SF_table_voltage,p9.aes(x='Time_s',y='Value',color='Feature'))
-
-    #         SF_plot += p9.facet_grid('Plot ~ .',scales='free')
-            
-
-    #         return SF_plot
-
+     
     @reactive.Calc
     @reactive.event(input.Update_cell_btn)
     def spike_analysis_plot():
@@ -2352,8 +2233,6 @@ def server(input: Inputs, output: Outputs, session: Session):
             cell_dict = get_cell_tables()
             Full_TVC_table = cell_dict['Full_TVC_table']
             Full_SF_table = cell_dict['Full_SF_table']
-            # Full_TVC_table = cells[0]
-            # Full_SF_table = cells[2]
             spike_trace_table = sp_an.get_cell_spikes_traces(Full_TVC_table, Full_SF_table)
 
             return spike_trace_table
@@ -2363,6 +2242,7 @@ def server(input: Inputs, output: Outputs, session: Session):
     @reactive.event(input.Update_cell_btn, input.Sweep_selected)
     def Spike_phase_plane_plot():
         spike_trace_table = spike_analysis_plot()
+        
         # Filter table based on the selected Sweep
         sub_spike_super_position_table = spike_trace_table.loc[spike_trace_table['Sweep'] == input.Sweep_selected(), :]
         discrete_colors = []
@@ -2546,9 +2426,7 @@ def server(input: Inputs, output: Outputs, session: Session):
             Full_TVC_table = cell_dict['Full_TVC_table']
             Sweep_info_table = cell_dict['Sweep_info_table']
             current_sweep = input.Sweep_selected()
-            #Full_TVC_table = cells[0]
             
-            #Sweep_info_table = cells[4]
             if input.use_custom_x_axis() == False:
             
                 stim_start_time = Sweep_info_table.loc[Sweep_info_table['Sweep'] == current_sweep,'Stim_start_s'].values[0]
@@ -2570,13 +2448,12 @@ def server(input: Inputs, output: Outputs, session: Session):
                 
                 BE = Sweep_info_table.loc[Sweep_info_table['Sweep'] == current_sweep,'Bridge_Error_GOhms'].values[0]
                 Full_SF_dict_table = cell_dict['Full_SF_dict_table']
-                #Full_SF_dict_table = cells[1]
                 original_TVC_table = current_TVC_table.copy()
                 original_TVC_table.loc[:,'Membrane_potential_mV'] -= BE*original_TVC_table.loc[:,'Input_current_pA']
                 Full_SF_table = sp_an.create_Full_SF_table(Full_TVC_table, Full_SF_dict_table, cell_sweep_info_table = Sweep_info_table, BE_correct=True)
                 current_SF_table = Full_SF_table.loc[str(current_sweep),'SF']
+                
             else:
-                #Full_SF_table = cells[2]
                 Full_SF_table = cell_dict['Full_SF_table']
                 current_SF_table = Full_SF_table.loc[str(current_sweep),'SF']
 
@@ -2586,6 +2463,9 @@ def server(input: Inputs, output: Outputs, session: Session):
     @reactive.Calc
     @reactive.event(input.Update_cell_btn,input.Sweep_selected)
     def get_sweep_linear_properties():
+        
+        #Get sweep based linear properties and plots dicts
+        #Same code as in sw_an.get_sweep_linear_properties
         if input.Sweep_selected() :
             cell_dict = get_cell_tables()
             current_sweep = input.Sweep_selected()
@@ -2682,171 +2562,7 @@ def server(input: Inputs, output: Outputs, session: Session):
             condition_table_styled = condition_table.style.set_table_attributes('class="dataframe shiny-table table w-auto"').apply(highlight_late)
             return condition_table_styled
                 
-    @output
-    @render.plot()
-    def linear_properties_fit():
-        if input.Sweep_selected() :
-            cell_dict = get_cell_tables()
-            current_sweep = input.Sweep_selected()
             
-            Sweep_info_table = cell_dict['Sweep_info_table']
-
-            
-            stim_start_time = Sweep_info_table.loc[Sweep_info_table['Sweep'] == current_sweep,'Stim_start_s'].values[0]
-            stim_end_time = Sweep_info_table.loc[Sweep_info_table['Sweep'] == current_sweep,'Stim_end_s'].values[0]
-            
-            linear_fit_plot=get_sweep_linear_properties()[1]
-            
-            linear_fit_plot+=p9.xlim(stim_start_time-.1,stim_end_time+.1)
-            return linear_fit_plot
-        
-    
-        
-    @output
-    @render.table()
-    def linear_properties_table():
-        if input.Sweep_selected() :
-            properties_table = get_sweep_linear_properties()[3]
-            properties_table=properties_table.T
-            
-            return properties_table
-        
-    @reactive.Calc
-    @reactive.event(input.Update_cell_btn,input.Sweep_selected)
-    def get_Bridge_Error_plots():
-        if input.Sweep_selected() :
-            cell_dict = get_cell_tables()
-            Full_TVC_table = cell_dict['Full_TVC_table']
-            Sweep_info_table = cell_dict['Sweep_info_table']
-            current_sweep = input.Sweep_selected()
-            #Full_TVC_table = cells[0]
-            TVC_table = ordifunc.get_filtered_TVC_table(Full_TVC_table, current_sweep, do_filter=True, filter=5., do_plot=False)
-            #Sweep_info_table = cells[4]
-            stim_start_time = Sweep_info_table.loc[Sweep_info_table['Sweep'] == current_sweep,'Stim_start_s'].values[0]
-            stim_end_time = Sweep_info_table.loc[Sweep_info_table['Sweep'] == current_sweep,'Stim_end_s'].values[0]
-            Holding_current,SS_current = sw_an.fit_stimulus_trace(
-                TVC_table, stim_start_time, stim_end_time,do_plot=False)[:2]
-            
-            if np.abs((Holding_current-SS_current))>=20.:
-                voltage_plot_start,voltage_plot_end, current_plot_start,current_plot_end = sw_an.estimate_bridge_error(
-                    TVC_table, SS_current, stim_start_time, stim_end_time, do_plot=True)
-             
-            
-                return voltage_plot_start,voltage_plot_end, current_plot_start,current_plot_end
-            
-    @output
-    @render.plot()
-    def BE_voltage_start():
-        if input.Sweep_selected() :
-            return get_Bridge_Error_plots()[0]
-        
-    @output
-    @render.plot()
-    def BE_voltage_end():
-        if input.Sweep_selected() :
-            return get_Bridge_Error_plots()[1]
-        
-    @output
-    @render.plot()
-    def BE_current_start():
-        if input.Sweep_selected() :
-            return get_Bridge_Error_plots()[2]
-        
-    @output
-    @render.plot()
-    def BE_current_end():
-        if input.Sweep_selected() :
-            return get_Bridge_Error_plots()[3]
-            
-                
-            
-    @reactive.Calc
-    @reactive.event(input.Update_cell_btn, input.Firing_response_type)
-    def get_firing_analysis_table():
-        if input.Cell_file_select() :
-            cell_dict = get_cell_tables()
-            
-            Sweep_info_table = cell_dict['Sweep_info_table']
-            Full_SF_table = cell_dict["Full_SF_table"]
-            
-            sweep_QC_table = cell_dict["Sweep_QC_table"]
-            cell_fit_table = cell_dict["Cell_fit_table"]
-            cell_feature_table = cell_dict['Cell_feature_table']
-            
-            
-            response_type = input.Firing_response_type()
-
-            response_type=response_type.replace(' ','_')
-            
-            sub_cell_fit_table = cell_fit_table.loc[cell_fit_table['Response_type'] == response_type,:]
-            sub_cell_feature_table = cell_feature_table.loc[cell_feature_table['Response_type'] == response_type,:]
-            output_response_list = list(sub_cell_fit_table.loc[:,'Output_Duration'])
-            
-            stim_freq_table_list=[]
-            model_table_list = []
-            IO_table_list = []
-            Saturation_table_list = []
-
-            for current_response_duration in output_response_list:
-                
-                if response_type == 'Time_based':
-                    response = str(str(int(current_response_duration*1e3))+'ms')
-                else:
-                    
-                    response = str(response_type.replace('_based',' ') + str(int(current_response_duration)))
-                    current_response_duration = int(current_response_duration)
-                current_stim_freq_table = fir_an.get_stim_freq_table(
-                    Full_SF_table.copy(), Sweep_info_table.copy(),sweep_QC_table.copy(), current_response_duration,response_type)
-                
-                
-                current_stim_freq_table['Response'] = response
-                stim_freq_table_list.append(current_stim_freq_table)
-                
-                model = sub_cell_fit_table.loc[sub_cell_fit_table['Output_Duration'] == current_response_duration,'I_O_obs'].values[0]
-                if model == 'Hill' or model == 'Hill-Sigmoid':
-                    
-                    model_table = fir_an.fit_IO_relationship_NEW_TEST(current_stim_freq_table, "--")[1]
-                    
-                    min_stim = np.nanmin(current_stim_freq_table.loc[:,'Stim_amp_pA'])
-                    max_stim = np.nanmax(current_stim_freq_table.loc[:,'Stim_amp_pA'])
-                    stim_array = np.arange(min_stim,max_stim,.1)
-                    
-                    model_table['Response'] = response
-                    Gain = sub_cell_feature_table.loc[sub_cell_feature_table['Output_Duration'] == current_response_duration,'Gain'].values[0]
-                    
-                    plot_list = fir_an.get_IO_features_NEW_TEST(current_stim_freq_table, response_type, current_response_duration, True,True)
-                    IO_plot = plot_list["3-IO_fit"]
-                    Intercept = IO_plot['intercept']
-                    
-                    IO_freq = stim_array*Gain+Intercept
-                    
-                    IO_table = pd.DataFrame({'Stim_amp_pA' : stim_array,
-                                                "Frequency_Hz" : IO_freq})
-                    IO_table['Response'] = response
-                    IO_table=IO_table.loc[IO_table['Frequency_Hz']>=-10.,:]
-                    
-                    if not np.isnan(sub_cell_feature_table.loc[sub_cell_feature_table['Output_Duration'] == current_response_duration,'Saturation_Stimulus'].values[0]):
-                        Saturation_stimulus =sub_cell_feature_table.loc[sub_cell_feature_table['Output_Duration'] == current_response_duration,'Saturation_Stimulus'].values[0]
-                        Saturation_freq =sub_cell_feature_table.loc[sub_cell_feature_table['Output_Duration'] == current_response_duration,'Saturation_Frequency'].values[0]
-                        Saturation_table = pd.DataFrame({'Stim_amp_pA' : Saturation_stimulus,
-                                                    "Frequency_Hz" : Saturation_freq,
-                                                    'Response' : response})
-                        Saturation_table_list.append(Saturation_table)
-                
-                    model_table_list.append(model_table)
-                    IO_table_list.append(IO_table)
-            
-            
-            
-            Full_stim_freq_table = pd.concat([*stim_freq_table_list],axis=0,ignore_index=True)
-            Full_model_table = pd.concat([*model_table_list],axis=0,ignore_index=True)
-            Full_IO_table = pd.concat([*IO_table_list],axis=0,ignore_index=True)
-            Full_IO_table['Response'] = Full_IO_table['Response'].astype('category')
-            if len(Saturation_table_list)!=0:
-                Full_Saturation_table = pd.concat([*Saturation_table_list],axis=0,ignore_index=True)
-            else:
-                Full_Saturation_table=pd.DataFrame()
-            return Full_stim_freq_table, Full_model_table, Full_IO_table, Full_Saturation_table
             
 
     @reactive.Calc
@@ -2855,7 +2571,6 @@ def server(input: Inputs, output: Outputs, session: Session):
         if input.Cell_file_select() :
             
             cell_dict=get_cell_tables()
-            
             IO_figure = get_firing_analysis(cell_dict, input.Firing_response_type())
             
             return IO_figure
@@ -2872,7 +2587,7 @@ def server(input: Inputs, output: Outputs, session: Session):
     @output
     @render_widget
     @reactive.event(input.Update_cell_btn, input.Firing_response_type)
-    def Gain_regression_plot_time_based_Second():
+    def Gain_regression_plot():
         if input.Cell_file_select() :
             
             cell_dict=get_cell_tables()
@@ -2936,7 +2651,7 @@ def server(input: Inputs, output: Outputs, session: Session):
     @output
     @render.table
     @reactive.event(input.Update_cell_btn, input.Firing_response_type)
-    def Gain_regression_table_time_based_Second():
+    def Gain_regression_table_time_based():
         if input.Cell_file_select() :
             
             cell_dict=get_cell_tables()
@@ -2960,7 +2675,7 @@ def server(input: Inputs, output: Outputs, session: Session):
     @output
     @render_widget
     @reactive.event(input.Update_cell_btn, input.Firing_response_type)
-    def Threshold_regression_plot_Second():
+    def Threshold_regression_plot():
         if input.Cell_file_select() :
             
             cell_dict=get_cell_tables()
@@ -3027,20 +2742,18 @@ def server(input: Inputs, output: Outputs, session: Session):
     @output
     @render.table
     @reactive.event(input.Update_cell_btn, input.Firing_response_type)
-    def Threshold_regression_table_Second():
+    def Threshold_regression_table():
         if input.Cell_file_select() :
             
             cell_dict=get_cell_tables()
             cell_feature_table  = cell_dict['Cell_feature_table']
-            gain_table = cell_feature_table.loc[cell_feature_table['Response_type'] == "Time_based",:]
             Threshold_table = cell_feature_table.loc[cell_feature_table['Response_type'] == "Time_based",:]
             sub_Threshold_table = Threshold_table.dropna(subset=['Threshold'])
             if sub_Threshold_table.shape[0]>1:
                 slope, intercept = fir_an.linear_fit(np.array(sub_Threshold_table.loc[:,'Output_Duration']),
                                                      np.array(sub_Threshold_table.loc[:,'Threshold']))
-                extended_x_data = np.arange(0,np.nanmax(np.array(Threshold_table.loc[:,'Output_Duration'])),.001)
-                original_data_x = np.array(Threshold_table['Output_Duration'])  # X values from your original data
-                original_data_y = np.array(Threshold_table['Threshold'])             # Y values from your original data
+                
+                
 
                 linear_fit_y = slope * np.array(sub_Threshold_table.loc[:,'Output_Duration']) + intercept
 
@@ -3056,7 +2769,7 @@ def server(input: Inputs, output: Outputs, session: Session):
     @output
     @render_widget
     @reactive.event(input.Update_cell_btn, input.Firing_response_type)
-    def Saturation_Frequency_regression_plot_Second():
+    def Saturation_Frequency_regression_plot():
         if input.Cell_file_select() :
             
             cell_dict=get_cell_tables()
@@ -3120,7 +2833,7 @@ def server(input: Inputs, output: Outputs, session: Session):
     @output
     @render.table
     @reactive.event(input.Update_cell_btn, input.Firing_response_type)
-    def Saturation_Frequency_regression_Second():
+    def Saturation_Frequency_regression():
         if input.Cell_file_select() :
             
             cell_dict=get_cell_tables()
@@ -3146,7 +2859,7 @@ def server(input: Inputs, output: Outputs, session: Session):
     @output
     @render_widget
     @reactive.event(input.Update_cell_btn, input.Firing_response_type)
-    def Saturation_Stimulus_regression_plot_Second():
+    def Saturation_Stimulus_regression_plot():
         if input.Cell_file_select() :
             
             cell_dict=get_cell_tables()
@@ -3202,15 +2915,12 @@ def server(input: Inputs, output: Outputs, session: Session):
                 )
                 
                 # Show the plot
-
-                
-            
                 return fig
     
     @output
     @render.table
     @reactive.event(input.Update_cell_btn, input.Firing_response_type)
-    def Saturation_Stimulus_regression_Second():
+    def Saturation_Stimulus_regression():
         if input.Cell_file_select() :
             
             cell_dict=get_cell_tables()
@@ -3236,7 +2946,7 @@ def server(input: Inputs, output: Outputs, session: Session):
     @output
     @render_widget
     @reactive.event(input.Update_cell_btn, input.Firing_response_type)
-    def Response_Failure_Stimulus_regression_plot_Second():
+    def Response_Failure_Stimulus_regression_plot():
         if input.Cell_file_select() :
             
             cell_dict=get_cell_tables()
@@ -3300,7 +3010,7 @@ def server(input: Inputs, output: Outputs, session: Session):
     @output
     @render.table
     @reactive.event(input.Update_cell_btn, input.Firing_response_type)
-    def Response_Fail_Stimulus_regression_Second():
+    def Response_Fail_Stimulus_regression():
         if input.Cell_file_select() :
             
             cell_dict=get_cell_tables()
@@ -3326,7 +3036,7 @@ def server(input: Inputs, output: Outputs, session: Session):
     @output
     @render_widget
     @reactive.event(input.Update_cell_btn, input.Firing_response_type)
-    def Response_Failure_Frequency_regression_plot_Second():
+    def Response_Failure_Frequency_regression_plot():
         if input.Cell_file_select() :
             
             cell_dict=get_cell_tables()
@@ -3390,7 +3100,7 @@ def server(input: Inputs, output: Outputs, session: Session):
     @output
     @render.table
     @reactive.event(input.Update_cell_btn, input.Firing_response_type)
-    def Response_Fail_Frequency_regression_Second():
+    def Response_Fail_Frequency_regression():
         if input.Cell_file_select() :
             
             cell_dict=get_cell_tables()
@@ -3415,64 +3125,63 @@ def server(input: Inputs, output: Outputs, session: Session):
     
     
     
-    @reactive.Effect
-    def _():
-        if input.Cell_file_select() :
+    # @reactive.Effect
+    # def _():
+    #     if input.Cell_file_select() :
             
-            cell_dict=get_cell_tables()
-            cell_fit_table = cell_dict['Cell_fit_table']
-            response_type = input.Firing_response_type_detail()
-            #cell_fit_table = cells[6]
-            sub_cell_fit_table = cell_fit_table.loc[cell_fit_table['Response_type'] == response_type,:]
-            sub_cell_fit_table = sub_cell_fit_table[sub_cell_fit_table["I_O_obs"].isin(['Hill','Hill-Sigmoid'])]
-            time_output_duration = list(sub_cell_fit_table.loc[:,'Output_Duration'].unique())
+    #         cell_dict=get_cell_tables()
+    #         cell_fit_table = cell_dict['Cell_fit_table']
+    #         response_type = input.Firing_response_type_detail()
+    #         sub_cell_fit_table = cell_fit_table.loc[cell_fit_table['Response_type'] == response_type,:]
+    #         sub_cell_fit_table = sub_cell_fit_table[sub_cell_fit_table["I_O_obs"].isin(['Hill','Hill-Sigmoid'])]
+    #         time_output_duration = list(sub_cell_fit_table.loc[:,'Output_Duration'].unique())
     
     
-            ui.update_select(
-                "Firing_output_duration_detail",
-                label="Select output duration",
-                choices=time_output_duration,
+    #         ui.update_select(
+    #             "Firing_output_duration_detail",
+    #             label="Select output duration",
+    #             choices=time_output_duration,
                 
-            )
-            ui.update_select(
-                "Firing_output_duration_new",
-                label="Select output duration",
-                choices=time_output_duration,
+    #         )
+    #         ui.update_select(
+    #             "Firing_output_duration_new",
+    #             label="Select output duration",
+    #             choices=time_output_duration,
                 
-            )
+    #         )
             
     
-    @reactive.Calc
-    @reactive.event(input.Update_cell_btn, input.Firing_response_type_detail,input.Firing_output_duration_detail)
-    def get_IO_fit_plots():
+    # @reactive.Calc
+    # @reactive.event(input.Update_cell_btn, input.Firing_response_type_detail,input.Firing_output_duration_detail)
+    # def get_IO_fit_plots():
         
-        if input.Firing_output_duration_detail() :
-            cell_dict=get_cell_tables()
-            Full_SF_table = cell_dict['Full_SF_table']
-            Sweep_info_table = cell_dict['Sweep_info_table']
-            sweep_QC_table = cell_dict['Sweep_QC_table']
+    #     if input.Firing_output_duration_detail() :
+    #         cell_dict=get_cell_tables()
+    #         Full_SF_table = cell_dict['Full_SF_table']
+    #         Sweep_info_table = cell_dict['Sweep_info_table']
+    #         sweep_QC_table = cell_dict['Sweep_QC_table']
             
             
             
-            response_type = input.Firing_response_type_detail()
-            response_duration = input.Firing_output_duration_detail()
+    #         response_type = input.Firing_response_type_detail()
+    #         response_duration = input.Firing_output_duration_detail()
             
-            stim_freq_table = fir_an.get_stim_freq_table(Full_SF_table, Sweep_info_table,sweep_QC_table,float(response_duration), response_based=response_type)
+    #         stim_freq_table = fir_an.get_stim_freq_table(Full_SF_table, Sweep_info_table,sweep_QC_table,float(response_duration), response_based=response_type)
 
-            plot_lists = fir_an.fit_IO_relationship(
-                stim_freq_table, do_plot=True)
+    #         plot_lists = fir_an.fit_IO_relationship(
+    #             stim_freq_table, do_plot=True)
             
-            return plot_lists
+    #         return plot_lists
     
                 
     
-    def render_plot_func(plot_list, j):
-        @render.plot
-        def f():
-            plot = plot_list[j]
+    # def render_plot_func(plot_list, j):
+    #     @render.plot
+    #     def f():
+    #         plot = plot_list[j]
             
-            return plot
-        return f
+    #         return plot
+    #     return f
     
     @output
     @render.table
@@ -3486,8 +3195,8 @@ def server(input: Inputs, output: Outputs, session: Session):
             Sweep_info_table = cell_dict['Sweep_info_table']
             Sweep_QC_table = cell_dict['Sweep_QC_table']
             
-            Firing_response_type_new = input.Firing_response_type_new()
-            if Firing_response_type_new=='Time_based':
+            Firing_response_type = input.Firing_response_type()
+            if Firing_response_type=='Time_based':
                 
                 Firing_output_duration_new = float(input.Firing_output_duration_new())
             else:
@@ -3495,13 +3204,13 @@ def server(input: Inputs, output: Outputs, session: Session):
             
 
             
-            Test_Gain = Cell_feature_table.loc[(Cell_feature_table['Response_type']==Firing_response_type_new)&
+            Test_Gain = Cell_feature_table.loc[(Cell_feature_table['Response_type']==Firing_response_type)&
                                                             (Cell_feature_table['Output_Duration']==Firing_output_duration_new), 'Gain'].values[0]
             
             
             if not np.isnan(Test_Gain):
-                stim_freq_table = fir_an.get_stim_freq_table(Full_SF_table, Sweep_info_table, Sweep_QC_table, Firing_output_duration_new, Firing_response_type_new)
-                parameters_table = fir_an.get_IO_features_NEW_TEST(stim_freq_table, Firing_response_type_new, Firing_output_duration_new, do_plot=False)[-1]
+                stim_freq_table = fir_an.get_stim_freq_table(Full_SF_table, Sweep_info_table, Sweep_QC_table, Firing_output_duration_new, Firing_response_type)
+                parameters_table = fir_an.get_IO_features(stim_freq_table, Firing_response_type, Firing_output_duration_new, do_plot=False)[-1]
                 
                 if "-Polynomial_fit" in input.Plot_new():
                     sub_parameter_table = parameters_table.loc[parameters_table['Fit']=='3rd_order_polynomial_fit',:]
@@ -3514,21 +3223,21 @@ def server(input: Inputs, output: Outputs, session: Session):
             return sub_parameter_table
                     
 
-    @output
-    @render.ui
-    def plots():
-        if input.Firing_output_duration_detail() :
-            plot_output_list = []
-            plot_list = get_IO_fit_plots()
-            counter = 0
-            for i in plot_list:
+    # @output
+    # @render.ui
+    # def plots():
+    #     if input.Firing_output_duration_detail() :
+    #         plot_output_list = []
+    #         plot_list = get_IO_fit_plots()
+    #         counter = 0
+    #         for i in plot_list:
 
-                plotname = f"IO_details_plot_{counter}"
+    #             plotname = f"IO_details_plot_{counter}"
     
-                plot_output_list.append(ui.output_plot(plotname))
-                output(render_plot_func(plot_list, i), id=plotname)
-                counter += 1
-            return ui.TagList(plot_output_list)
+    #             plot_output_list.append(ui.output_plot(plotname))
+    #             output(render_plot_func(plot_list, i), id=plotname)
+    #             counter += 1
+    #         return ui.TagList(plot_output_list)
         
     
         
@@ -3536,7 +3245,7 @@ def server(input: Inputs, output: Outputs, session: Session):
     @output
     @render_widget
     @reactive.event(input.Update_cell_btn, input.Plot_new, input.Firing_output_duration_new)
-    def Time_based_IO_plotly_new():
+    def IO_analysis_plotly():
         if input.JSON_config_file() and input.Cell_file_select() and input.Plot_new():
 
             cell_dict=get_cell_tables()
@@ -3545,8 +3254,8 @@ def server(input: Inputs, output: Outputs, session: Session):
             Sweep_info_table = cell_dict['Sweep_info_table']
             Sweep_QC_table = cell_dict['Sweep_QC_table']
             
-            Firing_response_type_new = input.Firing_response_type_new()
-            if Firing_response_type_new=='Time_based':
+            Firing_response_type = input.Firing_response_type()
+            if Firing_response_type=='Time_based':
                 
                 Firing_output_duration_new = float(input.Firing_output_duration_new())
             else:
@@ -3554,13 +3263,13 @@ def server(input: Inputs, output: Outputs, session: Session):
             
 
             
-            Test_Gain = Cell_feature_table.loc[(Cell_feature_table['Response_type']==Firing_response_type_new)&
+            Test_Gain = Cell_feature_table.loc[(Cell_feature_table['Response_type']==Firing_response_type)&
                                                             (Cell_feature_table['Output_Duration']==Firing_output_duration_new), 'Gain'].values[0]
             
             
             if not np.isnan(Test_Gain):
-                stim_freq_table = fir_an.get_stim_freq_table(Full_SF_table, Sweep_info_table, Sweep_QC_table, Firing_output_duration_new, Firing_response_type_new)
-                plot_list = fir_an.get_IO_features_NEW_TEST(stim_freq_table, Firing_response_type_new, Firing_output_duration_new, do_plot=True)
+                stim_freq_table = fir_an.get_stim_freq_table(Full_SF_table, Sweep_info_table, Sweep_QC_table, Firing_output_duration_new, Firing_response_type)
+                plot_list = fir_an.get_IO_features(stim_freq_table, Firing_response_type, Firing_output_duration_new, do_plot=True)
                 
                 # )
                 if "-Polynomial_fit" in input.Plot_new():
@@ -3794,26 +3503,7 @@ def server(input: Inputs, output: Outputs, session: Session):
                 return fig
             
             
-    # @render.download(filename="Firing_plot.pdf")
-    # def Save_Detail_Firing_plot():
-    #     # Another way to implement a file download is by yielding bytes; either all at
-    #     # once, like in this case, or by yielding multiple times. When using this
-    #     # approach, you should pass a filename argument to @render.download, which
-    #     # determines what the browser will name the downloaded file.
-    #     print('coucouc')
-    #     cell_dict=get_cell_tables()
-    #     Firing_response_type_new = input.Firing_response_type_new()
-    #     plot = get_firing_analysis(cell_dict,Firing_response_type_new)
-    #     with io.BytesIO() as buf:
-    #         plot.write_image(buf, format='pdf',width=1300, height=900)
-    #         #plot.savefig(buf, format="png")
-    #         yield buf.getvalue()
-
-                
-                
     
-            
-            
     @output
     @render_widget
     @reactive.event(input.Update_cell_btn, input.Sweep_selected)
@@ -3821,12 +3511,11 @@ def server(input: Inputs, output: Outputs, session: Session):
         if input.Cell_file_select() :
             cell_dict=get_cell_tables()
             Full_TVC_table = cell_dict['Full_TVC_table']
-            Full_SF_table = cell_dict['Full_SF_table']
             sweep_info_table = cell_dict['Sweep_info_table']
-            Sweep_QC_table = cell_dict['Sweep_QC_table']
+            
             if np.isnan(sweep_info_table.loc[sweep_info_table['Sweep']==input.Sweep_selected(),"Bridge_Error_GOhms"].values[0]) == False:
                 TVC_table = Full_TVC_table.loc[input.Sweep_selected(),"TVC"]
-                #TVC_table = ordifunc.get_filtered_TVC_table(Full_TVC_table, input.Sweep_selected(), do_filter=False, filter=5., do_plot=False)
+                
                 stim_amp = sweep_info_table.loc[sweep_info_table['Sweep']==input.Sweep_selected(),"Stim_SS_pA"].values[0]
                 Stim_start_s = sweep_info_table.loc[sweep_info_table['Sweep']==input.Sweep_selected(),"Stim_start_s"].values[0]
                 Stim_end_s = sweep_info_table.loc[sweep_info_table['Sweep']==input.Sweep_selected(),"Stim_end_s"].values[0]
@@ -3957,7 +3646,7 @@ def server(input: Inputs, output: Outputs, session: Session):
             cell_dict=get_cell_tables()
             BE_val = get_BE_value_and_table(cell_dict, input.Sweep_selected())[0]
             
-            return f"Estimated Bridge error = {round(BE_val, 5)} MOhms"
+            return f"Estimated Bridge error = {round(BE_val, 5)} GOhms"
             
                 
     
@@ -3973,7 +3662,7 @@ def server(input: Inputs, output: Outputs, session: Session):
             Sweep_QC_table = cell_dict['Sweep_QC_table']
             
             current_adaptation_measure = Adaptation_table.loc[Adaptation_table['Feature'] == input.Adaptation_feature_to_display(), "Measure" ].values[0]
-            print(f"current_adaptation_measure=FZEOFRKE: {current_adaptation_measure}")
+
             
             interval_based_feature = fir_an.collect_interval_based_features_test(Full_SF_table, sweep_info_table, Sweep_QC_table, 0.5, input.Adaptation_feature_to_display(), current_adaptation_measure)
             
@@ -4159,7 +3848,7 @@ def server(input: Inputs, output: Outputs, session: Session):
             Spike_feature_x = input.x_Spike_feature()
             
             Spike_feature_y = input.y_Spike_feature()
-            Spike_index_y = input.y_Spike_feature_index()
+
             
            
             spike_feature_table = get_spike_feature_index()

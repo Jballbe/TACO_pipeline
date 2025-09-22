@@ -1546,6 +1546,7 @@ def get_cell_spikes_traces(Full_TVC_table, Full_SF_table):
             
     return spike_trace_table
 
+
 def get_first_spike_features(arg_list):
     '''
     

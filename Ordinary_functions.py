@@ -18,8 +18,6 @@ import Sweep_analysis as sw_an
 import Spike_analysis as sp_an
 import Firing_analysis as fir_an
 import traceback
-import plotly.graph_objects as go
-import plotly.express as px
 import concurrent.futures
 
 
@@ -51,13 +49,14 @@ def get_upstroke_dowstroke_and_intervals(args_list):
         sweep_list = np.array(sweep_info_table.loc[:,'Sweep'])
         first_upstroke_deriv, first_downstroke_deriv, first_interval, tenth_interval, first_sweep_with_five, first_sweep_with_ten = [np.nan]*6
         Obs='--'
+        
         for current_sweep in sweep_list:
             SF_table = Full_SF_table.loc[current_sweep, "SF"]
             
             peak_table = SF_table.loc[SF_table['Feature']=='Peak',:]
             if peak_table.shape[0] ==0:
                 continue
-            elif peak_table.shape[0] >=5 :
+            elif peak_table.shape[0] >=5 : # Get forst sweep with at least 5 spikes, and get forst spike's Up/Downstroke ratio
                 SF_table = SF_table.sort_values(by=['Time_s'])
                 upstroke_table = SF_table.loc[SF_table['Feature']=="Upstroke",:]
                 upstroke_table=upstroke_table.reset_index(drop=True)
@@ -78,7 +77,7 @@ def get_upstroke_dowstroke_and_intervals(args_list):
             if peak_table.shape[0] ==0:
                 continue
             
-            elif peak_table.shape[0] >=10 :
+            elif peak_table.shape[0] >=10 : #Get first sweep with at least 10 spikes and get forst and tenth ISI
                 SF_table = SF_table.sort_values(by=['Time_s'])
                 peak_table = peak_table.reset_index(drop=True)
                 first_interval = peak_table.loc[1,'Time_s'] - peak_table.loc[0,'Time_s']
@@ -125,6 +124,7 @@ def get_filtered_TVC_table(original_cell_full_TVC_table,sweep,do_filter=True,fil
     TVC_table=cell_full_TVC_table.loc[str(sweep),'TVC'].copy()
 
     if do_filter:
+        #Filter membrane potential and input current traces
         
         TVC_table['Membrane_potential_mV']=np.array(filter_trace(TVC_table['Membrane_potential_mV'],
                                                                             TVC_table['Time_s'],
@@ -137,10 +137,8 @@ def get_filtered_TVC_table(original_cell_full_TVC_table,sweep,do_filter=True,fil
                                                                             do_plot=do_plot))
     
     
-    
+    #Get first and second time derivative of membrane potential trace
     first_derivative=get_derivative(np.array(TVC_table['Membrane_potential_mV']),np.array(TVC_table['Time_s']))
-
-
     second_derivative=get_derivative(first_derivative,np.array(TVC_table['Time_s']))
 
     
@@ -1048,7 +1046,7 @@ def read_cell_file_h5(cell_id, config_line, selection=['All']):
 def compute_cell_input_resistance(cell_dict):
     '''
     Define the method to compute the cell's input resistance from sweep-based measurements
-    Cell's input Resistance is defined as the slope of the linear fit of stimulus steady state and potential steady state during stimulus, for all swepp which validated quality criteria
+    Cell's input Resistance is defined as the mean of sweep based inut resistance for all sweeps that passed the QC
 
     Parameters
     ----------
@@ -1056,8 +1054,8 @@ def compute_cell_input_resistance(cell_dict):
     
     Returns
     -------
-    IR_regression_fit : list of float
-        [slope, intercept].
+    Mean_IR (in GOhms)
+    SD_IR (in GOhms)
 
     '''
     
@@ -1070,11 +1068,6 @@ def compute_cell_input_resistance(cell_dict):
     Mean_IR = np.nanmean(sweep_info_QC_table.loc[:,'Input_Resistance_GOhms'])
     SD_IR = np.nanstd(sweep_info_QC_table.loc[:,'Input_Resistance_GOhms'])
     
-    # sub_sweep_info_QC_table_SS_potential = sub_sweep_info_QC_table.dropna(subset=['SS_potential_mV'])
-    # SS_potential_mV_list = list(sub_sweep_info_QC_table_SS_potential.loc[:,'SS_potential_mV'])
-    # Stim_amp_pA_list = list(sub_sweep_info_QC_table_SS_potential.loc[:,'Stim_SS_pA'])
-    
-    # IR_regression_fit = fir_an.linear_fit(Stim_amp_pA_list, SS_potential_mV_list)
     
     return Mean_IR, SD_IR
 
@@ -1152,6 +1145,8 @@ def create_summary_tables(config_json_file_path, saving_path):
 
     '''
     
+    #Prepare dataframes with columns names, and units
+    
     unit_line=pd.DataFrame(['--','--','--','Hz/pA','pA','Hz','pA','Hz', "pA"]).T
     Full_feature_table=pd.DataFrame(columns=['Cell_id','Obs','I_O_NRMSE','Gain','Threshold','Saturation_Frequency','Saturation_Stimulus','Response_Fail_Frequency','Response_Fail_Stimulus','Response_type',"Output_Duration"])
     
@@ -1184,8 +1179,12 @@ def create_summary_tables(config_json_file_path, saving_path):
     Adaptation_table = pd.concat([Adaptation_table, Adaptation_table_unit_line],ignore_index = True)
     problem_cell=[]
     problem_df = pd.DataFrame(columns = ['Cell_id','Error_message'])
+    
+    
     config_json_file = open_json_config_file(config_json_file_path)
     Full_population_calss_table = pd.DataFrame()
+    
+    #Create full population class table, and resulting cell id list
     for line in config_json_file.index:
         current_db_population_class_table = pd.read_csv(config_json_file.loc[line,'db_population_class_file'])
         Full_population_calss_table= pd.concat([Full_population_calss_table,current_db_population_class_table],ignore_index = True)
@@ -1193,6 +1192,7 @@ def create_summary_tables(config_json_file_path, saving_path):
     cell_id_list = Full_population_calss_table.loc[:,'Cell_id'].unique()
     for cell_id in tqdm.tqdm(cell_id_list):
         try:
+            #For each cell, compute the mean IR, time constant, resting potential
             current_DB = Full_population_calss_table.loc[Full_population_calss_table['Cell_id']==cell_id,'Database'].values[0]
             config_line = config_json_file.loc[config_json_file['database_name']==current_DB,:]
             cell_dict = read_cell_file_h5(str(cell_id),config_line,['Sweep analysis','Firing analysis','Processing_report', "Sweep QC"])
@@ -1206,15 +1206,11 @@ def create_summary_tables(config_json_file_path, saving_path):
             sub_sweep_info_QC_table = sweep_info_QC_table.loc[sweep_info_QC_table['Passed_QC'] == True,:]
             sub_sweep_info_QC_table['Protocol_id'] =  sub_sweep_info_QC_table['Protocol_id'].astype(str)
             
-            sub_sweep_info_QC_table_SS_potential = sub_sweep_info_QC_table.dropna(subset=['SS_potential_mV'])
-            SS_potential_mV_list = list(sub_sweep_info_QC_table_SS_potential.loc[:,'SS_potential_mV'])
-            Stim_amp_pA_list = list(sub_sweep_info_QC_table_SS_potential.loc[:,'Stim_SS_pA'])
+           
             
-
             Cell_IR, IR_SD = compute_cell_input_resistance(cell_dict)
             
             
-
             
             if Cell_IR <=0:
                 Cell_IR = np.nan
@@ -1235,14 +1231,16 @@ def create_summary_tables(config_json_file_path, saving_path):
                 'Time_based':[.005, .010, .025, .050, .100, .250, .500],
                 'Index_based':list(np.arange(2,18)),
                 'Interval_based':list(np.arange(1,17))}
-
+            
             if cell_fit_table.shape[0]==1:
 
                 for response_type in response_duration_dictionnary.keys():
                     output_duration_list=response_duration_dictionnary[response_type]
+                    
                     for output_duration in output_duration_list:
-                        I_O_obs=cell_fit_table.loc[(cell_fit_table['Response_type']==response_type )& (cell_fit_table['Output_Duration']==output_duration),"I_O_obs"]
+                        I_O_obs=cell_fit_table.loc[(cell_fit_table['Response_type']==response_type) & (cell_fit_table['Output_Duration']==output_duration),"I_O_obs"]
                         if len(I_O_obs)!=0:
+                            
                             Gain,Threshold,Saturation_Frequency,Saturation_Stimulus,Response_Failure_Frequency,Response_Failure_Stimulus = np.array(cell_feature_table.loc[(cell_feature_table['Response_type']==response_type )&
                                                                                                                                        (cell_feature_table['Output_Duration']==output_duration),
                                                                                                                                 ["Gain","Threshold","Saturation_Frequency","Saturation_Stimulus","Response_Fail_Frequency", "Response_Fail_Stimulus"]]).tolist()[0]
@@ -1373,11 +1371,6 @@ def create_summary_tables(config_json_file_path, saving_path):
                 return str('problem with table'+str(response_type)+'_'+str(output_duration))
             
             new_fit_table.to_csv(f"{saving_path}Full_Fit_Table_{response_type}_{output_duration}.csv")
-            
-            
-            
-            
-            
             
             
     cell_linear_values.to_csv(str(saving_path+ 'Full_Cell_linear_values.csv')) 
@@ -1582,5 +1575,82 @@ def get_cells_sampling_freq(config_json_file):
     full_result = pd.concat(result_list, ignore_index = True)
     
     return full_result
+
+def get_max_frequency(config_json_file):
+    
+    
+    results_lists = []
+    for database in config_json_file.loc[:,'database_name'].unique():
+        database_cell_pop_table_file = config_json_file.loc[config_json_file['database_name']==database,"db_population_class_file"].values[0]
+        database_config_line = config_json_file.loc[config_json_file['database_name']==database,:]
+        database_cell_pop_table = pd.read_csv(database_cell_pop_table_file)
+        cell_id_list = list(database_cell_pop_table.loc[:,'Cell_id'].unique())
+        
+        args_list = [[x, 
+                      database_config_line] for x in cell_id_list]
+        
+        with concurrent.futures.ProcessPoolExecutor(max_workers = 7) as executor:
+            problem_cell_list = {executor.submit(sw_an.get_max_frequency_parallel,x): x for x in args_list}
+            for f in tqdm.tqdm(concurrent.futures.as_completed(problem_cell_list),total = len(cell_id_list), desc=f'Processing {database}'):
+                spike_lines = f.result()
+                if spike_lines is not None:
+                    results_lists.append(f.result())
+        
+                    
+    Full_max_freq_table = pd.concat(results_lists, ignore_index = True)
+    
+    unit_line = pd.DataFrame(["--", "Hz", "pA", 'Hz', 'pA', 'Hz',"pA",'--']).T
+    unit_line.columns = ['Cell_id','Maximum_Frequency_Hz', "Maximum_Frequency_Stimulus_pA", "Maximum_Frequency_step_Hz", "Stimulus_for_Maximum_freq_Step_pA", "Second_Maximum_Frequency_Step_Hz","Stimulus_for_Second_Maximum_freq_Step_pA", "Maximum_frequency_Step_ratio"]
+    
+    Full_max_freq_table = pd.concat([unit_line, Full_max_freq_table], ignore_index = True)
+    
+    return Full_max_freq_table
+
+def gather_Full_population_cell_Sweep_info(config_json_file):
+    
+    full_result_cell_sweep_info_list = []
+    full_result_cell_QC_list = []
+    
+    for current_db in config_json_file.loc[:,"database_name"].unique():
+        
+        current_db_config_line = config_json_file.loc[config_json_file['database_name']==current_db,:].reset_index(drop=True)
+        current_db_pop_class_table = pd.read_csv(current_db_config_line.loc[0,"db_population_class_file"])
+        
+        
+        for current_cell_id in tqdm.tqdm(current_db_pop_class_table.loc[:,'Cell_id'].unique(), desc = f'Current DB = {current_db}'):
+            
+            try:
+                
+                cell_dict = ordifunc.read_cell_file_h5(current_cell_id,
+                                              current_db_config_line,
+                                              selection = ["Sweep analysis"])
+                
+                current_cell_sweep_info_table = cell_dict["Sweep_info_table"]
+                current_cell_sweep_info_table.loc[:,'Cell_id'] = str(current_cell_id)
+                current_cell_sweep_info_table.loc[:,'Database'] = str(current_db)
+                
+                current_cell_QC_table = cell_dict["Sweep_QC_table"]
+                current_cell_QC_table.loc[:,'Cell_id'] = str(current_cell_id)
+                current_cell_QC_table.loc[:,'Database'] = str(current_db)
+                
+                full_result_cell_sweep_info_list.append(current_cell_sweep_info_table)
+                full_result_cell_QC_list.append(current_cell_QC_table)
+                
+            except:
+                print(f'Problem with cell : {current_cell_id} in database {current_db}')
+                
+    Full_cell_sweep_info = pd.concat(full_result_cell_sweep_info_list, ignore_index = True)
+    Full_cell_sweep_QC = pd.concat(full_result_cell_QC_list, ignore_index = True)
+    
+    return Full_cell_sweep_info, Full_cell_sweep_QC
+                
+                
+                
+    
+     
+    
+    
+    
+    
             
    

@@ -12,7 +12,6 @@ from lmfit.models import PolynomialModel, Model, ConstantModel
 from lmfit import Parameters
 import plotnine as p9
 import plotly.graph_objects as go
-import math
 import plotly.io as pio
 pio.renderers.default = "browser"
 
@@ -84,7 +83,7 @@ def compute_cell_features(Full_SF_table,cell_sweep_info_table,response_duration_
 
             if do_fit == True:
                 
-                I_O_obs, Hill_Amplitude, Hill_coef, Hill_Half_cst,Hill_x0, sigmoid_x0,sigmoid_k,I_O_NRMSE, Gain, Threshold, Saturation_freq,Saturation_stim, IO_fail_stim, IO_fail_freq, parameters_table = get_IO_features_NEW_TEST(stim_freq_table, response_type, output_duration, False)
+                I_O_obs, Hill_Amplitude, Hill_coef, Hill_Half_cst,Hill_x0, sigmoid_x0,sigmoid_k,I_O_NRMSE, Gain, Threshold, Saturation_freq,Saturation_stim, IO_fail_stim, IO_fail_freq, parameters_table = get_IO_features(stim_freq_table, response_type, output_duration, False)
             else:
 
                 I_O_obs = pruning_obs
@@ -308,20 +307,20 @@ def data_pruning_I_O(original_stim_freq_table,cell_sweep_info_table):
     return obs, do_fit
 
 
-def get_IO_features_NEW_TEST(original_stimulus_frequency_table,response_type, response_duration, cell_id='--', do_plot = False, print_plot = False):
+def get_IO_features(original_stimulus_frequency_table,response_type, response_duration, cell_id='--', do_plot = False, print_plot = False):
     
     
-    obs, fit_model_table, Amp, H_x0, H_Half_cst, H_Hill_coef, S_x0, S_k, Legend, Fit_NRMSE ,plot_list, parameters_table = fit_IO_relationship_NEW_TEST(original_stimulus_frequency_table,cell_id = cell_id,do_plot=do_plot,print_plot=print_plot)
+    obs, fit_model_table, Amp, H_x0, H_Half_cst, H_Hill_coef, S_x0, S_k, Legend, Fit_NRMSE ,plot_list, parameters_table = fit_IO_relationship(original_stimulus_frequency_table,cell_id = cell_id,do_plot=do_plot,print_plot=print_plot)
     
     if obs == 'Hill-Sigmoid':
 
         Descending_segment = True
         
-        feature_obs,Gain,Threshold,Saturation_frequency,Saturation_stimulation,IO_fail_stim, IO_fail_freq ,plot_list = extract_IO_features_NEW_TEST(original_stimulus_frequency_table,response_type, fit_model_table, Descending_segment, Legend, response_duration,cell_id = cell_id, do_plot = do_plot ,plot_list=plot_list, print_plot=print_plot)
+        feature_obs,Gain,Threshold,Saturation_frequency,Saturation_stimulation,IO_fail_stim, IO_fail_freq ,plot_list = extract_IO_features(original_stimulus_frequency_table,response_type, fit_model_table, Descending_segment, Legend, response_duration,cell_id = cell_id, do_plot = do_plot ,plot_list=plot_list, print_plot=print_plot)
     
     elif obs == 'Hill':
         Descending_segment = False
-        feature_obs,Gain,Threshold,Saturation_frequency,Saturation_stimulation,IO_fail_stim, IO_fail_freq ,plot_list = extract_IO_features_NEW_TEST(original_stimulus_frequency_table,response_type, fit_model_table, Descending_segment, Legend, response_duration, cell_id = cell_id, do_plot = do_plot,plot_list=plot_list, print_plot=print_plot)
+        feature_obs,Gain,Threshold,Saturation_frequency,Saturation_stimulation,IO_fail_stim, IO_fail_freq ,plot_list = extract_IO_features(original_stimulus_frequency_table,response_type, fit_model_table, Descending_segment, Legend, response_duration, cell_id = cell_id, do_plot = do_plot,plot_list=plot_list, print_plot=print_plot)
     
     else:
 
@@ -337,7 +336,7 @@ def get_IO_features_NEW_TEST(original_stimulus_frequency_table,response_type, re
     
     
     
-def fit_IO_relationship_NEW_TEST(original_stimulus_frequency_table,cell_id='--',do_plot=False,print_plot=False):
+def fit_IO_relationship(original_stimulus_frequency_table,cell_id='--',do_plot=False,print_plot=False):
     '''
     Fit to the Input Output (stimulus-frequency) relationship  a continuous curve, and compute I/O features (Gain, Threshold, Saturation...)
     If a saturation is detected, then the IO relationship is fit to a Hill-Sigmoid function
@@ -617,18 +616,7 @@ def fit_IO_relationship_NEW_TEST(original_stimulus_frequency_table,cell_id='--',
             A_max = 2*A_init
         else:
             A_max = 10*A_init
-        # print(extended_polynomial_fit_table)
-        # import matplotlib.pyplot as plt
-        # plt.plot(extended_polynomial_fit_table["Stim_amp_pA"],extended_polynomial_fit_table["Frequency_Hz"] )
-        # # Add points from trimmed_x_data and trimmed_y_data
-        # plt.scatter(original_x_data, original_y_data, color='black', marker='o', label='Data Points')
-        # plt.scatter(trimmed_x_data, trimmed_y_data, color='red', marker='o', label='Trimmed Points')
         
-        # # Optionally add labels, legend, and show the plot
-        # plt.xlabel("Stim_amp_pA")
-        # plt.ylabel("Frequency_Hz")
-        # plt.legend()
-        # plt.show()
         poly_up_table = extended_polynomial_fit_table.loc[(extended_polynomial_fit_table['First_Derivative']>0)&(extended_polynomial_fit_table['Stim_amp_pA']<stimulus_for_max_freq),:]
         if poly_up_table.shape[0]==0:
             raise EmptyTrimmedPolynomialFit("No Ascending portion of polynomial fit before maximum frequency")
@@ -894,8 +882,8 @@ def fit_IO_relationship_NEW_TEST(original_stimulus_frequency_table,cell_id='--',
             Final_S_k = np.nan
             
         
-        Hill_sigmoid_color_dict = {"Final_Hill_Fit":"green",
-                                   "Final_Hill_Sigmoid_fit" : "green",
+        Hill_sigmoid_color_dict = {"Final_Hill_Fit":"blue",
+                                   "Final_Hill_Sigmoid_fit" : "blue",
                                    "Initial conditions" : "red"}
         
         parameters_table = pd.concat([third_order_fit_params_table, Final_fit_parameters], ignore_index= True)
@@ -1056,7 +1044,7 @@ def is_fit_stuck_at_initial_conditions(parameters_table,fit):
         
         if round(initial_value,4) == round(resulting_value,4):
             stucked_parameters+=1
-            # print(f'parameter {sub_parameters_table.loc[elt, "Parameter"]} stuck at initial value : {initial_value}')
+
     
     if stucked_parameters == number_params:
         return True
@@ -1064,7 +1052,7 @@ def is_fit_stuck_at_initial_conditions(parameters_table,fit):
         return False
     
     
-def extract_IO_features_NEW_TEST(original_stimulus_frequency_table,response_type,fit_model_table,Descending_segment,Legend,response_duration,cell_id = '--', do_plot=False,plot_list=None,print_plot=False):
+def extract_IO_features(original_stimulus_frequency_table,response_type,fit_model_table,Descending_segment,Legend,response_duration,cell_id = '--', do_plot=False,plot_list=None,print_plot=False):
     '''
     From the fitted IO relationship, computed neuronal firing features 
 
@@ -1134,10 +1122,6 @@ def extract_IO_features_NEW_TEST(original_stimulus_frequency_table,response_type
         if 'Passed_QC' in original_data_subset_QC.columns:
             original_data_subset_QC=original_data_subset_QC[original_data_subset_QC['Passed_QC']==True]
         
-        
-
-        original_x_data = np.array(original_data_subset_QC['Stim_amp_pA'])
-        original_y_data = np.array(original_data_subset_QC['Frequency_Hz'])
 
         extended_x_data= fit_model_table['Stim_amp_pA']
         predicted_y_data = fit_model_table['Frequency_Hz']
@@ -1254,7 +1238,7 @@ def extract_IO_features_NEW_TEST(original_stimulus_frequency_table,response_type
             
             plot_list[f"{len(plot_list.keys())+1}-IO_fit"]=feature_plot_dict
 
-            #plot_list[str(str(len(plot_list.keys()))+"-IO_fit")]=feature_plot
+
             if print_plot==True:
                 print(feature_plot)
     
@@ -1308,61 +1292,6 @@ def get_parameters_table(fit_model_params, result):
     
     
 
-# def extract_IO_features_Test(original_stimulus_frequency_table,response_type, response_duration, do_plot = False, print_plot = False):
-    
-    
-#     obs,Final_fit_extended,Final_Amp,Final_H_x0, Final_H_Half_cst,Final_H_Hill_coef,Final_S_x0, Final_S_sigma,Legend,plot_list, parameters_table = fit_IO_relationship_Test(original_stimulus_frequency_table,do_plot=do_plot,print_plot=print_plot)
-   
-#     if obs == 'Hill-Sigmoid':
-
-#         Descending_segment = True
-#         feature_obs,best_QNRMSE,Gain,Threshold,Saturation_frequency,Saturation_stimulation,plot_list=extract_IO_features(original_stimulus_frequency_table,response_type,Final_fit_extended,Final_Amp,Final_H_x0,Final_H_Half_cst,Final_H_Hill_coef,Final_S_x0,Final_S_sigma,Descending_segment,Legend,response_duration, do_plot,plot_list=plot_list,print_plot=print_plot)
-        
-
-#         if feature_obs == 'Hill-Sigmoid':
-#             if do_plot==True:
-
-#                 return plot_list
-#             return feature_obs,Final_Amp,Final_H_Hill_coef,Final_H_Half_cst,Final_H_x0,Final_S_x0,Final_S_sigma,best_QNRMSE,Gain,Threshold,Saturation_frequency,Saturation_stimulation, parameters_table
-        
-#         else:
-#             Descending_segment=False
-
-#             obs,Final_fit_extended,Final_Amp,Final_H_x0, Final_H_Half_cst,Final_H_Hill_coef,Final_S_x0, Final_S_sigma,Legend,plot_list, parameters_table = fit_IO_relationship_Test(original_stimulus_frequency_table,Force_single_Hill=True,do_plot=do_plot,print_plot=print_plot)
-            
-#             if obs =='Hill':
-#                 feature_obs,best_QNRMSE,Gain,Threshold,Saturation_frequency,Saturation_stimulation,plot_list=extract_IO_features(original_stimulus_frequency_table,response_type,Final_fit_extended,Final_Amp,Final_H_x0,Final_H_Half_cst,Final_H_Hill_coef,Final_S_x0,Final_S_sigma,Descending_segment,Legend,response_duration, do_plot,plot_list=plot_list,print_plot=print_plot)
-                
-#             else:
-#                 empty_array = np.empty(5)
-#                 empty_array[:] = np.nan
-#                 feature_obs=obs
-#                 best_QNRMSE,Gain,Threshold,Saturation_frequency,Saturation_stimulation = empty_array
-            
-    
-#     elif obs == "Hill":
-#         Descending_segment=False
-
-#         feature_obs,best_QNRMSE,Gain,Threshold,Saturation_frequency,Saturation_stimulation,plot_list=extract_IO_features(original_stimulus_frequency_table,response_type,Final_fit_extended,Final_Amp,Final_H_x0,Final_H_Half_cst,Final_H_Hill_coef,Final_S_x0,Final_S_sigma,Descending_segment,Legend,response_duration,do_plot,plot_list=plot_list,print_plot=print_plot)
-        
-        
-#     else:
-#         Descending_segment=False
-#         obs,Final_fit_extended,Final_Amp,Final_H_x0, Final_H_Half_cst,Final_H_Hill_coef,Final_S_x0, Final_S_sigma,Legend,plot_list, parameters_table = fit_IO_relationship_Test(original_stimulus_frequency_table,Force_single_Hill=True,do_plot=do_plot,print_plot=print_plot)
-        
-#         if obs =='Hill':
-#             feature_obs,best_QNRMSE,Gain,Threshold,Saturation_frequency,Saturation_stimulation,plot_list=extract_IO_features(original_stimulus_frequency_table,response_type,Final_fit_extended,Final_Amp,Final_H_x0,Final_H_Half_cst,Final_H_Hill_coef,Final_S_x0,Final_S_sigma,Descending_segment,Legend,response_duration, do_plot,plot_list=plot_list,print_plot=print_plot)
-            
-#         else:
-#             empty_array = np.empty(5)
-#             empty_array[:] = np.nan
-#             feature_obs=obs
-#             best_QNRMSE,Gain,Threshold,Saturation_frequency,Saturation_stimulation = empty_array
-            
-#     if do_plot:
-#         return plot_list
-#     return feature_obs,Final_Amp,Final_H_Hill_coef,Final_H_Half_cst,Final_H_x0,Final_S_x0,Final_S_sigma,best_QNRMSE,Gain,Threshold,Saturation_frequency,Saturation_stimulation, parameters_table
- 
 
 
 def plot_IO_fit(plot_list, plot_to_do, return_plot=False):
@@ -1971,27 +1900,11 @@ def get_min_freq_step(original_stimulus_frequency_table,do_plot=False):
             asc_sig_comp_table['Frequency_Hz'] = asc_sig_comp_table['Frequency_Hz']*max(original_data['Frequency_Hz'])/max(asc_sig_comp_table['Frequency_Hz'])
 
            
-            
-           
-           
-            
             sigmoid_fit_plot =  p9.ggplot(original_data,p9.aes(x='Stim_amp_pA',y="Frequency_Hz"))+p9.geom_point()
             sigmoid_fit_plot += p9.geom_line(full_sigmoid_fit_table, p9.aes(x='Stim_amp_pA',y="Frequency_Hz"))
-            #sigmoid_fit_plot += p9.geom_line(trimmed_ascending_segment,p9.aes(x='Stim_amp_pA',y="Frequency_Hz",color='Legend',group='Legend'))
-            #sigmoid_fit_plot += p9.geom_line(component_table,p9.aes(x='Stim_amp_pA',y="Frequency_Hz",color='Legend',group='Legend'),linetype='dashed')
-            
             sigmoid_fit_plot += p9.ggtitle("Sigmoid_fit_to original_data")
             
-            # if Descending_segment:
-                
-                
-            #     sigmoid_fit_plot += p9.geom_line(trimmed_descending_segment,p9.aes(x='Stim_amp_pA',y="Frequency_Hz",color='Legend',group='Legend'))
-                
             
-           
-            
-            
-    
             print(sigmoid_fit_plot)
          ### 4 - end
 
@@ -2019,7 +1932,6 @@ def get_min_freq_step(original_stimulus_frequency_table,do_plot=False):
         maximum_fit_frequency_index = np.nanargmax(y_data)
         maximum_fit_stimulus = x_data[maximum_fit_frequency_index]
         noisy_spike_freq_threshold = np.nanmax([.04*np.nanmax(y_data),2.])
-        #noisy_spike_freq_threshold = 2.
         until_maximum_data = original_data_table[original_data_table['Stim_amp_pA']<=maximum_fit_stimulus].copy()
        
         until_maximum_data = until_maximum_data[until_maximum_data['Frequency_Hz']>noisy_spike_freq_threshold]
@@ -2044,7 +1956,6 @@ def get_min_freq_step(original_stimulus_frequency_table,do_plot=False):
         if do_plot:
             minimum_freq_step_plot = p9.ggplot(original_data_table,p9.aes(x='Stim_amp_pA',y='Frequency_Hz'))+p9.geom_point()
             minimum_freq_step_plot += p9.geom_point(until_maximum_data,p9.aes(x='Stim_amp_pA',y='Frequency_Hz'),color='red')
-            #minimum_freq_step_plot += p9.geom_line(full_sigmoid_fit_table, p9.aes(x='Stim_amp_pA',y="Frequency_Hz"))
             minimum_freq_step_plot += p9.geom_vline(xintercept = minimum_freq_step_stim )
             minimum_freq_step_plot += p9.geom_hline(yintercept = minimum_freq_step)
             minimum_freq_step_plot += p9.geom_hline(yintercept = noisy_spike_freq_threshold,linetype='dashed',alpha=.4)
@@ -2105,107 +2016,10 @@ def hill_function (x, x0, Hill_coef, Half_cst):
     return y
 
 
-# Residual function to minimize
-def residual_Hill(params, x, data):
-    """Residual function to minimize."""
-    x0 = params['Final_Hill_x0']
-    Ka = params['Final_Hill_Half_cst']
-    n = params['Final_Hill_Hill_coef']
-    
-    model = hill_function(x, x0, n, Ka)
-    return data - model
 
-def jacobian_hill(pars, x, data= None):
-    
-    x0, n, Ka = pars['Final_Hill_x0'], pars['Final_Hill_Hill_coef'], pars['Final_Hill_Half_cst']
-    
-    dy_dx0 = np.empty(x.size)
-    dy_dHill_coef = np.empty(x.size)
-    dy_dHalf_cst = np.empty(x.size)
-    
-    if len(max(np.where( x <= x0))) !=0:
-        
-        x0_index = max(np.where( x <= x0)[0])+1
-        dy_dx0[:x0_index] = 0.
-        dy_dHill_coef[:x0_index] = 0.
-        dy_dHalf_cst[:x0_index] = 0.
-        
-        dy_dx0[x0_index:] = -n*(x[x0_index:] - x0)**n/((Ka**n + (x[x0_index:] - x0)**n)*(x[x0_index:] - x0)) + n*(x[x0_index:] - x0)**(2*n)/((Ka**n + (x[x0_index:] - x0)**n)**2*(x[x0_index:] - x0))
-        
-        dy_dHill_coef[x0_index:] = (x[x0_index:] - x0)**n*np.log(x[x0_index:] - x0)/(Ka**n + (x[x0_index:] - x0)**n) + (x[x0_index:] - x0)**n*(-Ka**n*np.log(Ka) - (x[x0_index:] - x0)**n*np.log(x[x0_index:] - x0))/(Ka**n + (x[x0_index:] - x0)**n)**2
-        
-        dy_dHalf_cst[x0_index:] = -Ka**n*n*(x[x0_index:] - x0)**n/(Ka*(Ka**n + (x[x0_index:] - x0)**n)**2)
-    
-    else:
-    
-        dy_dx0 = -n*(x - x0)**n/((Ka**n + (x - x0)**n)*(x - x0)) + n*(x - x0)**(2*n)/((Ka**n + (x - x0)**n)**2*(x - x0))
-        
-        dy_dHill_coef = (x - x0)**n*np.log(x - x0)/(Ka**n + (x - x0)**n) + (x - x0)**n*(-Ka**n*np.log(Ka) - (x - x0)**n*np.log(x - x0))/(Ka**n + (x - x0)**n)**2
-        
-        dy_dHalf_cst = -Ka**n*n*(x - x0)**n/(Ka*(Ka**n + (x - x0)**n)**2)
-    
-    
-    return np.array([dy_dx0, dy_dHill_coef, dy_dHalf_cst])
 
-def hebbian_hill(pars, x, data=None):
-    
-    x0, n, Ka = pars['Final_Hill_x0'], pars['Final_Hill_Hill_coef'], pars['Final_Hill_Half_cst']
-    
-    dy2_dx0dx0 = np.empty(x.size)          # Second partial derivative with respect to x0
-    dy2_dx0dn = np.empty(x.size)           # Mixed partial derivative with respect to x0 and n
-    dy2_dx0dKa = np.empty(x.size)          # Mixed partial derivative with respect to x0 and Ka
-    dy2_dndx0 = np.empty(x.size)           # Mixed partial derivative with respect to n and x0
-    dy2_dndn = np.empty(x.size)            # Second partial derivative with respect to n
-    dy2_dndKa = np.empty(x.size)           # Mixed partial derivative with respect to n and Ka
-    dy2_dKadx0 = np.empty(x.size)          # Mixed partial derivative with respect to Ka and x0
-    dy2_dKadn = np.empty(x.size)           # Mixed partial derivative with respect to Ka and n
-    dy2_dKadKa = np.empty(x.size)          # Mixed partial derivative with respect to Ka and Ka
-    
-    
-    
-    if len(max(np.where( x <= x0))) !=0:
-        
-        x0_index = max(np.where( x <= x0)[0])+1
-        
-        dy2_dx0dx0[:x0_index] = 0.
-        dy2_dx0dn[:x0_index] = 0.
-        dy2_dx0dKa[:x0_index] = 0.
-        
-        dy2_dndx0[:x0_index] = 0.
-        dy2_dndn[:x0_index] = 0.
-        dy2_dndKa[:x0_index] = 0.
-        
-        dy2_dKadx0[:x0_index] = 0.
-        dy2_dKadn[:x0_index] = 0.
-        dy2_dKadKa[:x0_index] = 0.
-        
-        dy2_dx0dx0[x0_index:] = n**2*(x[x0_index:] - x0)**n/((Ka**n + (x[x0_index:] - x0)**n)*(x[x0_index:] - x0)**2) - 3*n**2*(x[x0_index:] - x0)**(2*n)/((Ka**n + (x[x0_index:] - x0)**n)**2*(x - x0)**2) + 2*n**2*(x[x0_index:] - x0)**(3*n)/((Ka**n + (x[x0_index:] - x0)**n)**3*(x[x0_index:] - x0)**2) - n*(x[x0_index:] - x0)**n/((Ka**n + (x[x0_index:] - x0)**n)*(x[x0_index:] - x0)**2) + n*(x[x0_index:] - x0)**(2*n)/((Ka**n + (x[x0_index:] - x0)**n)**2*(x[x0_index:] - x0)**2)
-        dy2_dx0dn[x0_index:] = -n*(x[x0_index:] - x0)**n*np.log(x[x0_index:] - x0)/((Ka**n + (x[x0_index:] - x0)**n)*(x[x0_index:] - x0)) + 2*n*(x[x0_index:] - x0)**(2*n)*np.log(x[x0_index:] - x0)/((Ka**n + (x[x0_index:] - x0)**n)**2*(x[x0_index:] - x0)) - n*(x[x0_index:] - x0)**n*(-Ka**n*np.log(Ka) - (x[x0_index:] - x0)**n*np.log(x[x0_index:] - x0))/((Ka**n + (x[x0_index:] - x0)**n)**2*(x[x0_index:] - x0)) + n*(x[x0_index:] - x0)**(2*n)*(-2*Ka**n*np.log(Ka) - 2*(x[x0_index:] - x0)**n*np.log(x[x0_index:] - x0))/((Ka**n + (x[x0_index:] - x0)**n)**3*(x[x0_index:] - x0)) - (x[x0_index:] - x0)**n/((Ka**n + (x[x0_index:] - x0)**n)*(x[x0_index:] - x0)) + (x[x0_index:] - x0)**(2*n)/((Ka**n + (x[x0_index:] - x0)**n)**2*(x[x0_index:] - x0))
-        dy2_dx0dKa[x0_index:] = Ka**n*n**2*(x[x0_index:] - x0)**n/(Ka*(Ka**n + (x[x0_index:] - x0)**n)**2*(x[x0_index:] - x0)) - 2*Ka**n*n**2*(x[x0_index:] - x0)**(2*n)/(Ka*(Ka**n + (x[x0_index:] - x0)**n)**3*(x[x0_index:] - x0))
-        
-        dy2_dndx0[x0_index:] = -n*(x[x0_index:] - x0)**n*np.log(x[x0_index:] - x0)/((Ka**n + (x[x0_index:] - x0)**n)*(x[x0_index:] - x0)) + 2*n*(x[x0_index:] - x0)**(2*n)*np.log(x[x0_index:] - x0)/((Ka**n + (x[x0_index:] - x0)**n)**2*(x[x0_index:] - x0)) - n*(x[x0_index:] - x0)**n*(-Ka**n*np.log(Ka) - (x[x0_index:] - x0)**n*np.log(x[x0_index:] - x0))/((Ka**n + (x[x0_index:] - x0)**n)**2*(x[x0_index:] - x0)) + n*(x[x0_index:] - x0)**(2*n)*(-2*Ka**n*np.log(Ka) - 2*(x[x0_index:] - x0)**n*np.log(x[x0_index:] - x0))/((Ka**n + (x[x0_index:] - x0)**n)**3*(x[x0_index:] - x0)) - (x[x0_index:] - x0)**n/((Ka**n + (x[x0_index:] - x0)**n)*(x[x0_index:] - x0)) + (x[x0_index:] - x0)**(2*n)/((Ka**n + (x[x0_index:] - x0)**n)**2*(x[x0_index:] - x0))
-        dy2_dndn[x0_index:] = (x[x0_index:] - x0)**n*np.log(x[x0_index:] - x0)**2/(Ka**n + (x[x0_index:] - x0)**n) + 2*(x[x0_index:] - x0)**n*(-Ka**n*np.log(Ka) - (x[x0_index:] - x0)**n*np.log(x[x0_index:] - x0))*np.log(x[x0_index:] - x0)/(Ka**n + (x[x0_index:] - x0)**n)**2 + (x[x0_index:] - x0)**n*(-Ka**n*np.log(Ka)**2 - (x[x0_index:] - x0)**n*np.log(x[x0_index:] - x0)**2)/(Ka**n + (x[x0_index:] - x0)**n)**2 + (x[x0_index:] - x0)**n*(-2*Ka**n*np.log(Ka) - 2*(x[x0_index:] - x0)**n*np.log(x[x0_index:] - x0))*(-Ka**n*np.log(Ka) - (x[x0_index:] - x0)**n*np.log(x[x0_index:] - x0))/(Ka**n + (x[x0_index:] - x0)**n)**3
-        dy2_dndKa[x0_index:] = (x[x0_index:] - x0)**n*(-Ka**n*n*np.log(Ka)/Ka - Ka**n/Ka)/(Ka**n + (x[x0_index:] - x0)**n)**2 - Ka**n*n*(x[x0_index:] - x0)**n*np.log(x[x0_index:] - x0)/(Ka*(Ka**n + (x[x0_index:] - x0)**n)**2) - 2*Ka**n*n*(x[x0_index:] - x0)**n*(-Ka**n*np.log(Ka) - (x[x0_index:] - x0)**n*np.log(x[x0_index:] - x0))/(Ka*(Ka**n + (x[x0_index:] - x0)**n)**3)
-        
-        dy2_dKadx0[x0_index:] = Ka**n*n**2*(x[x0_index:] - x0)**n/(Ka*(Ka**n + (x[x0_index:] - x0)**n)**2*(x[x0_index:] - x0)) - 2*Ka**n*n**2*(x[x0_index:] - x0)**(2*n)/(Ka*(Ka**n + (x[x0_index:] - x0)**n)**3*(x[x0_index:] - x0))
-        dy2_dKadn[x0_index:] = (x[x0_index:] - x0)**n*(-Ka**n*n*np.log(Ka)/Ka - Ka**n/Ka)/(Ka**n + (x[x0_index:] - x0)**n)**2 - Ka**n*n*(x[x0_index:] - x0)**n*np.log(x[x0_index:] - x0)/(Ka*(Ka**n + (x[x0_index:] - x0)**n)**2) - 2*Ka**n*n*(x[x0_index:] - x0)**n*(-Ka**n*np.log(Ka) - (x[x0_index:] - x0)**n*np.log(x[x0_index:] - x0))/(Ka*(Ka**n + (x[x0_index:] - x0)**n)**3)
-        dy2_dKadKa[x0_index:] = 2*Ka**(2*n)*n**2*(x[x0_index:] - x0)**n/(Ka**2*(Ka**n + (x[x0_index:] - x0)**n)**3) - Ka**n*n**2*(x[x0_index:] - x0)**n/(Ka**2*(Ka**n + (x[x0_index:] - x0)**n)**2) + Ka**n*n*(x[x0_index:] - x0)**n/(Ka**2*(Ka**n + (x[x0_index:] - x0)**n)**2)
-    
-    else:
-    
-        dy2_dx0dx0 = n**2*(x - x0)**n/((Ka**n + (x - x0)**n)*(x - x0)**2) - 3*n**2*(x - x0)**(2*n)/((Ka**n + (x - x0)**n)**2*(x - x0)**2) + 2*n**2*(x - x0)**(3*n)/((Ka**n + (x - x0)**n)**3*(x - x0)**2) - n*(x - x0)**n/((Ka**n + (x - x0)**n)*(x - x0)**2) + n*(x - x0)**(2*n)/((Ka**n + (x - x0)**n)**2*(x - x0)**2)
-        dy2_dx0dn = -n*(x - x0)**n* np.log(x - x0)/((Ka**n + (x - x0)**n)*(x - x0)) + 2*n*(x - x0)**(2*n)* np.log(x - x0)/((Ka**n + (x - x0)**n)**2*(x - x0)) - n*(x - x0)**n*(-Ka**n* np.log(Ka) - (x - x0)**n* np.log(x - x0))/((Ka**n + (x - x0)**n)**2*(x - x0)) + n*(x - x0)**(2*n)*(-2*Ka**n* np.log(Ka) - 2*(x - x0)**n* np.log(x - x0))/((Ka**n + (x - x0)**n)**3*(x - x0)) - (x - x0)**n/((Ka**n + (x - x0)**n)*(x - x0)) + (x - x0)**(2*n)/((Ka**n + (x - x0)**n)**2*(x - x0))
-        dy2_dx0dKa = Ka**n*n**2*(x - x0)**n/(Ka*(Ka**n + (x - x0)**n)**2*(x - x0)) - 2*Ka**n*n**2*(x - x0)**(2*n)/(Ka*(Ka**n + (x - x0)**n)**3*(x - x0))
-        
-        dy2_dndx0 = -n*(x - x0)**n* np.log(x - x0)/((Ka**n + (x - x0)**n)*(x - x0)) + 2*n*(x - x0)**(2*n)* np.log(x - x0)/((Ka**n + (x - x0)**n)**2*(x - x0)) - n*(x - x0)**n*(-Ka**n* np.log(Ka) - (x - x0)**n* np.log(x - x0))/((Ka**n + (x - x0)**n)**2*(x - x0)) + n*(x - x0)**(2*n)*(-2*Ka**n* np.log(Ka) - 2*(x - x0)**n* np.log(x - x0))/((Ka**n + (x - x0)**n)**3*(x - x0)) - (x - x0)**n/((Ka**n + (x - x0)**n)*(x - x0)) + (x - x0)**(2*n)/((Ka**n + (x - x0)**n)**2*(x - x0))
-        dy2_dndn = (x - x0)**n* np.log(x - x0)**2/(Ka**n + (x - x0)**n) + 2*(x - x0)**n*(-Ka**n* np.log(Ka) - (x - x0)**n* np.log(x - x0))* np.log(x - x0)/(Ka**n + (x - x0)**n)**2 + (x - x0)**n*(-Ka**n* np.log(Ka)**2 - (x - x0)**n* np.log(x - x0)**2)/(Ka**n + (x - x0)**n)**2 + (x - x0)**n*(-2*Ka**n* np.log(Ka) - 2*(x - x0)**n* np.log(x - x0))*(-Ka**n* np.log(Ka) - (x - x0)**n* np.log(x - x0))/(Ka**n + (x - x0)**n)**3
-        dy2_dndKa = (x - x0)**n*(-Ka**n*n* np.log(Ka)/Ka - Ka**n/Ka)/(Ka**n + (x - x0)**n)**2 - Ka**n*n*(x - x0)**n* np.log(x - x0)/(Ka*(Ka**n + (x - x0)**n)**2) - 2*Ka**n*n*(x - x0)**n*(-Ka**n* np.log(Ka) - (x - x0)**n* np.log(x - x0))/(Ka*(Ka**n + (x - x0)**n)**3)
-        
-        dy2_dKadx0 = Ka**n*n**2*(x - x0)**n/(Ka*(Ka**n + (x - x0)**n)**2*(x - x0)) - 2*Ka**n*n**2*(x - x0)**(2*n)/(Ka*(Ka**n + (x - x0)**n)**3*(x - x0))
-        dy2_dKadn = (x - x0)**n*(-Ka**n*n* np.log(Ka)/Ka - Ka**n/Ka)/(Ka**n + (x - x0)**n)**2 - Ka**n*n*(x - x0)**n* np.log(x - x0)/(Ka*(Ka**n + (x - x0)**n)**2) - 2*Ka**n*n*(x - x0)**n*(-Ka**n* np.log(Ka) - (x - x0)**n* np.log(x - x0))/(Ka*(Ka**n + (x - x0)**n)**3)
-        dy2_dKadKa = 2*Ka**(2*n)*n**2*(x - x0)**n/(Ka**2*(Ka**n + (x - x0)**n)**3) - Ka**n*n**2*(x - x0)**n/(Ka**2*(Ka**n + (x - x0)**n)**2) + Ka**n*n*(x - x0)**n/(Ka**2*(Ka**n + (x - x0)**n)**2)
-    
-    return np.array([dy2_dx0dx0, dy2_dx0dn, dy2_dx0dKa, dy2_dndx0, dy2_dndn, dy2_dndKa, dy2_dKadx0, dy2_dKadn, dy2_dKadKa])
+
+
     
 def fit_adaptation_curve(interval_frequency_table_init,do_plot=False):
     '''
@@ -2493,19 +2307,19 @@ def fit_adaptation_test(interval_frequency_table_init,do_plot=False):
         for i in y_data_pred:
             positive_y_data_pred.append(max(0.0,i))
         
-        Na = int(np.nanmin([30,np.nanmax(x_data)]))
+        Na = int(np.nanmin([30,np.nanmax(x_data)])) #Select either the maximum between the 30th index and the maximum index of the data 
 
 
     
-        C_ref = np.nanmin(positive_y_data_pred[:int(Na-1)])
+        C_ref = np.nanmin(positive_y_data_pred[:int(Na-1)]) #C_ref is the positive value of the predicted expoential at Na-1
         
-        C = (Na-1)*C_ref
+        C = (Na-1)*C_ref # the constant part corresponds to the rectangle delimited by Na-1 its  corresponding y predicted value; and the plot's origin (0,0)
 
         modulated_y_data_pred = []
         for i in positive_y_data_pred:
             new_value = i - positive_y_data_pred[(Na-1)]
             modulated_y_data_pred.append(new_value)
-        
+            
         M = np.abs(np.nansum(modulated_y_data_pred))
         
         #we describe the adaptation index as the relative amount a certain characteritic changes during a spike train versus a constant component
@@ -2673,7 +2487,7 @@ def get_maximum_number_of_spikes_test(original_SF_table, original_cell_sweep_inf
     maximum_nb_interval =0
     SF_table=original_SF_table.copy()
     cell_sweep_info_table=original_cell_sweep_info_table.copy()
-    sweep_QC_table=sweep_QC_table_inst.copy()
+
     sweep_list=np.array(SF_table.loc[:,"Sweep"])
     for current_sweep in sweep_list:
         

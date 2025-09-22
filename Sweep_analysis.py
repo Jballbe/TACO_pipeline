@@ -29,7 +29,7 @@ class Single_Expo_Fit_Error(Exception):
     """Exception raised for errors in the fitting process."""
     pass
 
-def sweep_analysis_processing(cell_Full_TVC_table, cell_stim_time_table, nb_workers):
+def sweep_analysis_processing(cell_Full_TVC_table, cell_stim_time_table):
     '''
     Create cell_sweep_info_table using parallel processing.
     For each sweep contained in cell_Full_TVC_table, extract different recording information (Bridge Error, sampling frequency),
@@ -43,9 +43,7 @@ def sweep_analysis_processing(cell_Full_TVC_table, cell_stim_time_table, nb_work
         
     cell_stim_time_table : pd.DataFrame
         DataFrame, containing foir each Sweep the corresponding stimulus start and end times.
-        
-    nb_workers : int
-        Number of CPU cores to use for parallel processing.
+     
 
     Returns
     -------
@@ -145,12 +143,6 @@ def sweep_analysis_processing(cell_Full_TVC_table, cell_stim_time_table, nb_work
         Linear_table, how='inner', on='Sweep')
     
     
-    
-   
-
-
-    
-    
 
 
     cell_sweep_info_table = cell_sweep_info_table.loc[:, ['Sweep',
@@ -229,6 +221,7 @@ def get_sweep_info_loop(cell_Full_TVC_table, cell_stim_time_table):
     sweep_list = cell_Full_TVC_table.loc[:,'Sweep']
     
     for current_sweep in sweep_list:
+
 
         stim_start_time = cell_stim_time_table.loc[current_sweep,'Stim_start_s']
         stim_end_time = cell_stim_time_table.loc[current_sweep,'Stim_end_s']
@@ -310,9 +303,13 @@ def get_sweep_linear_properties(sweep_info_list):
     
     
     original_TVC_table, sweep, stim_start, stim_end, BE_extrapolated, BE, stim_amp = sweep_info_list
+
     TVC_table = original_TVC_table.copy()
     #rely on BE corrected trace
-    TVC_table.loc[:,'Membrane_potential_mV'] = TVC_table.loc[:,'Membrane_potential_mV']-BE*TVC_table.loc[:,'Input_current_pA']
+    if not np.isnan(BE): 
+        # in a case where BE could not be estimated for any traces in a given protocol, BE would be np.nan
+        # In that case, do not compute BE corrected trace
+        TVC_table.loc[:,'Membrane_potential_mV'] = TVC_table.loc[:,'Membrane_potential_mV']-BE*TVC_table.loc[:,'Input_current_pA']
     
     
     
@@ -339,7 +336,7 @@ def get_sweep_linear_properties(sweep_info_list):
                                                                               do_plot = False)
     
     Do_linear_analysis = check_criteria_linear_analysis(TVC_table,  stim_start, stim_end, transient_time, R2)[0]
-    
+
     if Do_linear_analysis == False:
     
         
@@ -356,13 +353,8 @@ def get_sweep_linear_properties(sweep_info_list):
         Holding_current,SS_current = fit_stimulus_trace(
             TVC_table, stim_start, stim_end, do_plot=False)[:2]
         
-         
-        
-        
-        #R_in=((SS_potential-holding_potential)/stim_amp)-BE
         
         time_cst=best_tau*1e3 #convert s to ms
-        #resting_potential = holding_potential - (R_in+BE)*Holding_current
 
         
         
@@ -373,7 +365,12 @@ def get_sweep_linear_properties(sweep_info_list):
     return sweep_line
 
 def check_criteria_linear_analysis(TVC_table, stim_start, stim_end, transient_time, R2):
+    """
+    Check the traces fill some criteria to accept linear analysis
+
     
+
+    """
     
     voltage_spike_table = sp_an.identify_spike(np.array(TVC_table.Membrane_potential_mV),
                                     np.array(TVC_table.Time_s),
@@ -571,9 +568,7 @@ def fit_membrane_time_cst_new (original_TVC_table,start_time,end_time,do_plot=Fa
         if best_tau > .080 or best_tau < .0029:
             raise Tau_Outside_Range_Error(f"Resulting tau is lower than 2.9 ms or higher than 80 ms.")
             
-        # if best_A/RMSE > 0.1:
-        #     raise Error_too_High(f"A/RMSE = {best_A/RMSE} > 0.1 ")
-
+        
         
         return best_A,best_tau,best_C,RMSE
     except (TypeError):
@@ -666,6 +661,12 @@ def plot_fit_membrane_time_cst_new(plot_dict, TACO_App = False):
 
 
 def estimate_input_resistance_and_resting_potential(original_TVC_table, stim_start_time, stim_end_time, membrane_time_constant, do_plot = False):
+    """
+    Input resistance is estimated by the slope of the linear fit of membrane potential and input current when the stimulus is off(before stim start time and after stim end time) and on (between stim start and stim end)
+    To remove any transient membrane potential, a time wondow of 5ms is removed after stim start and stim end times
+    The resting potential is computed as the intercept of the fit
+
+    """
     
     TVC_table = original_TVC_table.copy()
     if np.isnan(membrane_time_constant):
@@ -673,10 +674,7 @@ def estimate_input_resistance_and_resting_potential(original_TVC_table, stim_sta
     else:
         transient_time = 3*membrane_time_constant
     
-    # start_time = TVC_table["Time_s"].min() + 0.020
-    # end_time = TVC_table["Time_s"].max() - 0.020
     
-    # TVC_table = TVC_table[(TVC_table["Time_s"] >= start_time) & (TVC_table["Time_s"] <= end_time)]
     
     Pre_stim_start_table = TVC_table.loc[(TVC_table['Time_s'] <= stim_start_time-0.005),:]
     During_stim_table = TVC_table.loc[(TVC_table['Time_s'] >= stim_start_time+transient_time)&(TVC_table['Time_s'] <= stim_end_time-0.005),:]
@@ -713,6 +711,7 @@ def estimate_input_resistance_and_resting_potential(original_TVC_table, stim_sta
         return plot_dict
     
     if  np.abs(current_step) < 40.0 or R2 < 0.8:
+        #To be accepted, the current step must be higher than 40pA, and the R2 of the fit must be higher than 0.8
         IR = np.nan
         V_rest = np.nan
     
@@ -721,7 +720,10 @@ def estimate_input_resistance_and_resting_potential(original_TVC_table, stim_sta
     
     
 def plot_estimate_input_resistance_and_resting_potential(plot_dict, sampling_step = 5, TACO_App = False):
-    
+    """
+    Plot function of r IR and Vrest analysis
+
+    """
     
     Full_TVC_table = plot_dict["Full_TVC_table"]
     Pre_stim_start_table = plot_dict["Pre_stim_start_table"]
@@ -921,7 +923,7 @@ def fit_stimulus_trace(TVC_table_original,stim_start,stim_end,do_plot=False):
     index_stim_end=next(x for x, val in enumerate(x_data[0:]) if val >= (stim_end) )
     
     
-    
+
     stim_table['Input_current_pA']=np.array(ordifunc.filter_trace(stim_table['Input_current_pA'],
                                                                         stim_table['Time_s'],
                                                                         filter=1,
@@ -983,9 +985,10 @@ def fit_stimulus_trace(TVC_table_original,stim_start,stim_end,do_plot=False):
     best_stim_amp=double_step_out.best_values['stim_amplitude']
     best_stim_start=double_step_out.best_values['stim_start']
     best_stim_end=double_step_out.best_values['stim_end']
-    
-    NRMSE_double_Heaviside=root_mean_squared_error(y_data.iloc[index_stim_start:index_stim_end], Double_Heaviside_function(x_data, best_stim_start, best_stim_end, best_baseline, best_stim_amp)[index_stim_start:index_stim_end])/(best_stim_amp)
-
+    try:
+        NRMSE_double_Heaviside=root_mean_squared_error(y_data.iloc[index_stim_start:index_stim_end], Double_Heaviside_function(x_data, best_stim_start, best_stim_end, best_baseline, best_stim_amp)[index_stim_start:index_stim_end])/(best_stim_amp)
+    except:
+        NRMSE_double_Heaviside = np.nan
     if do_plot:
         computed_y_data=pd.Series(Double_Heaviside_function(x_data, best_stim_start,best_stim_end, best_baseline, best_stim_amp))
         model_table=pd.DataFrame({'Time_s' :x_data,
@@ -1135,7 +1138,7 @@ def estimate_bridge_error(original_TVC_table,stim_amplitude,stim_start_time,stim
         delta_I = post_T_current - pre_T_current
     
         
-        ##Is there fluctuations?
+        ##Are there fluctuations?
         #Compute std of voltage trace in the first half of the trace before the stimulus start
         std_v_double_dot = np.nanstd(np.array(TVC_table.loc[(TVC_table['Time_s']>=0.)&(TVC_table['Time_s']<=(stim_start_time/2)),'V_double_dot_five_kHz']))
         alpha_FT = 6*std_v_double_dot
@@ -1193,8 +1196,7 @@ def estimate_bridge_error(original_TVC_table,stim_amplitude,stim_start_time,stim
         
     
         best_single_A,best_single_tau, best_single_C, RMSE_single_expo, V_1exp_fit = fit_single_exponential_BE(Exponential_TVC_table,False)
-        # if np.isnan(best_single_tau):
-        #     raise Single_Expo_Fit_Error("Single Exponential Fit Error")
+       
         
         extended_time_trace = np.array(TVC_table.loc[(TVC_table['Time_s'] >= actual_transition_time)&(TVC_table['Time_s'] <= T_start_fit+0.005),'Time_s'])
         extended_time_trace_shifted = extended_time_trace-np.nanmin(np.array(Exponential_TVC_table.loc[:,"Time_s"]))
@@ -1775,154 +1777,7 @@ class Error_too_High(Exception):
     """Exception raised when A/RMSE for time constant fit is higher than 0.1 ."""
     pass
 
-    
-def fit_membrane_time_cst (original_TVC_table,start_time,end_time,do_plot=False):
-    '''
-    Fit decaying time constant model to membrane voltage trace
-
-    Parameters
-    ----------
-    original_TVC_table : pd.DataFrame
-        Contains the Time, voltage, Current and voltage 1st and 2nd derivatives arranged in columns.
-        
-    start_time : Float
-        Start time of the window to consider.
-        
-    end_time : Float
-        End time of the window to consider.
-        
-    do_plot : Boolean, optional
-        Do plot. The default is False.
-
-    Returns
-    -------
-    best_A, best_tau, best_C : Float
-        Fitting results
-        
-    membrane_resting_voltage : Float
-        
-    NRMSE : Float
-        Godness of fit.
-
-    '''
-    try:
-        TVC_table=original_TVC_table.copy()
-        
-        sub_TVC_table=TVC_table[TVC_table['Time_s']<=(end_time+.5)]
-        sub_TVC_table=sub_TVC_table[sub_TVC_table['Time_s']>=(start_time-.5)]
-        
-        
-        
-        x_data=np.array(sub_TVC_table.loc[:,'Time_s'])
-        y_data=np.array(sub_TVC_table.loc[:,"Membrane_potential_mV"])
-        
-        start_idx = np.argmin(abs(x_data - start_time))
-        end_idx = np.argmin(abs(x_data - end_time))
-        
-        
-        #Estimate parameters initial values
-        membrane_holding_voltage=np.median(y_data[:start_idx])
-
-        mid_idx=int((end_idx+start_idx)/2)
-
-        
-        x_0=start_time
-        y_0=y_data[np.argmin(abs(x_data - x_0))]
-        
-        x_1=start_time+.05
-        y_1=y_data[np.argmin(abs(x_data - x_1))]
-        
-       
-        initial_membrane_SS=np.median(y_data[mid_idx:end_idx])
-
-
-        if (y_1-initial_membrane_SS)/(y_0-initial_membrane_SS)>0:
-            initial_time_cst = (x_0-x_1)/np.log((y_1-initial_membrane_SS)/(y_0-initial_membrane_SS))
-            initial_A=(y_1-initial_membrane_SS)*np.exp(x_1/initial_time_cst)
-
-
-        else:
-
-            membrane_delta = initial_membrane_SS-membrane_holding_voltage
-        
-            
-            initial_voltage_time_cst = membrane_holding_voltage+(2/3)*membrane_delta
-
-            initial_voltage_time_cst_idx = np.argmin(abs(y_data[start_idx:end_idx] - initial_voltage_time_cst))+start_idx
-            initial_time_cst = x_data[initial_voltage_time_cst_idx]-start_time
-            
-        
-            
-            initial_A=(y_data[start_idx]-initial_membrane_SS)/np.exp(-x_data[start_idx]/initial_time_cst)
-            
-            
-            
-        double_step_model=Model(time_cst_model)
-       
-        double_step_model_pars=Parameters()
-        
-        double_step_model_pars.add('A',value=initial_A)
-        double_step_model_pars.add('tau',value=initial_time_cst)
-        double_step_model_pars.add('C',value=initial_membrane_SS)
-
-
-        double_step_out=double_step_model.fit(y_data[start_idx:end_idx], double_step_model_pars, x=x_data[start_idx:end_idx])        
-
-        best_A=double_step_out.best_values['A']
-        best_tau=double_step_out.best_values['tau']
-        best_C=double_step_out.best_values['C']
-        
-        parameters_table = fir_an.get_parameters_table(double_step_model_pars, double_step_out)
-
-        simulation=time_cst_model(x_data[start_idx:end_idx],best_A,best_tau,best_C)
-        sim_table=pd.DataFrame(np.column_stack((x_data[start_idx:end_idx],simulation)),columns=["Time_s","Membrane_potential_mV"])
-        
-        squared_error = np.square(y_data[start_idx:end_idx] - simulation)
-        sum_squared_error = np.sum(squared_error)
-        current_RMSE = np.sqrt(sum_squared_error / len(y_data[start_idx:end_idx]))
-        
-        NRMSE=current_RMSE/abs(membrane_holding_voltage-initial_membrane_SS)
-
-
-        
-        
-        if do_plot==True:
-            
-            my_plot=p9.ggplot(TVC_table,p9.aes(x="Time_s",y="Membrane_potential_mV"))+p9.geom_line(color='blue')#+xlim((start_time-.1),(end_time+.1))
-            
-            
-            my_plot=my_plot+p9.geom_line(sim_table,p9.aes(x='Time_s',y='Membrane_potential_mV'),color='red')
-            
-    
-            #print(my_plot)
-            return my_plot
-        
-        if best_tau > .300:
-            raise Tau_Too_Long_Error(f"Resulting tau is longer than fitting time window")
-
-        
-        return best_A,best_tau,best_C,membrane_holding_voltage,NRMSE
-    except (TypeError):
-        best_A=np.nan
-        best_tau=np.nan
-        best_C=np.nan
-        NRMSE=np.nan
-        return best_A,best_tau,best_C,membrane_holding_voltage,NRMSE
-    
-    except Tau_Too_Long_Error as e:
-        best_A=np.nan
-        best_tau=np.nan
-        best_C=np.nan
-        NRMSE=np.nan
-        return best_A,best_tau,best_C,membrane_holding_voltage,NRMSE
-        
-    except(ValueError):
-        best_A=np.nan
-        best_tau=np.nan
-        best_C=np.nan
-        NRMSE=np.nan
-        return best_A,best_tau,best_C,membrane_holding_voltage,NRMSE
-    
+ 
 
     
 def Double_Heaviside_function(x, stim_start, stim_end,baseline,stim_amplitude):
@@ -2275,22 +2130,23 @@ def get_max_frequency_parallel(arg_list):
             max_frequency_step = stim_freq_table_steps.iloc[0]['Frequency_step']
             stim_for_max_step = stim_freq_table_steps.iloc[0]['Stim_amp_pA']
         
+            # 5. Find the maximum and second highest frequency steps and the corresponding stimuli
             second_max_frequency_step = stim_freq_table_steps.iloc[1]['Frequency_step']
-
+            stim_second_max_frequency_step = stim_freq_table_steps.iloc[1]['Stim_amp_pA']
         
-            # 5. Find the stimulus corresponding to the maximum observed frequency
+            # 6. Find the stimulus corresponding to the maximum observed frequency
             max_frequency = stim_freq_table['Frequency_Hz'].max()
             stim_for_max_frequency = stim_freq_table.loc[stim_freq_table['Frequency_Hz'].idxmax(), 'Stim_amp_pA']
     
             
             max_freq_tep_ratio = max_frequency_step/second_max_frequency_step
             
-        cell_df = pd.DataFrame([str(cell_id), max_frequency, stim_for_max_frequency, max_frequency_step, stim_for_max_step, second_max_frequency_step, max_freq_tep_ratio ]).T
-        cell_df.columns = ['Cell_id','Maximum_Frequency_Hz', "Maximum_Frequency_Stimulus_pA", "Maximum_Frequency_step_Hz", "Stimulus_for_Maximum_freq_Step_pA", "Second_Maximum_Frequency_Step_Hz", "Maximum_frequency_Step_ratio"]
+        cell_df = pd.DataFrame([str(cell_id), max_frequency, stim_for_max_frequency, max_frequency_step, stim_for_max_step, second_max_frequency_step,stim_second_max_frequency_step, max_freq_tep_ratio ]).T
+        cell_df.columns = ['Cell_id','Maximum_Frequency_Hz', "Maximum_Frequency_Stimulus_pA", "Maximum_Frequency_step_Hz", "Stimulus_for_Maximum_freq_Step_pA", "Second_Maximum_Frequency_Step_Hz","Stimulus_for_Second_Maximum_freq_Step_pA", "Maximum_frequency_Step_ratio"]
         return cell_df
-    except:
-        cell_df = pd.DataFrame([str(cell_id), np.nan, np.nan, np.nan, np.nan, np.nan, np.nan]).T
-        cell_df.columns = ['Cell_id','Maximum_Frequency_Hz', "Maximum_Frequency_Stimulus_pA", "Maximum_Frequency_step_Hz", "Stimulus_for_Maximum_freq_Step_pA", "Second_Maximum_Frequency_Step_Hz", "Maximum_frequency_Step_ratio"]
+    except RuntimeError:
+        cell_df = pd.DataFrame([str(cell_id), np.nan, np.nan, np.nan, np.nan, np.nan,np.nan, np.nan]).T
+        cell_df.columns = ['Cell_id','Maximum_Frequency_Hz', "Maximum_Frequency_Stimulus_pA", "Maximum_Frequency_step_Hz", "Stimulus_for_Maximum_freq_Step_pA", "Second_Maximum_Frequency_Step_Hz","Stimulus_for_Second_Maximum_freq_Step_pA", "Maximum_frequency_Step_ratio"]
         return cell_df
     
 
