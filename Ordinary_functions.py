@@ -18,6 +18,7 @@ import Sweep_analysis as sw_an
 import Spike_analysis as sp_an
 import Firing_analysis as fir_an
 import traceback
+import json
 import concurrent.futures
 
 
@@ -560,6 +561,7 @@ def write_cell_file_h5(cell_file_path,
     
 
     file.close()
+    
 
 def open_json_config_file(config_file):
     '''
@@ -576,16 +578,22 @@ def open_json_config_file(config_file):
         DataFrame containing the information of the JSON configuration file.
 
     '''
-    config_json = pd.read_json(config_file)
-    colnames = config_json.keys().to_list()[:-1]
-    colnames = colnames+pd.DataFrame(config_json.loc[0,"DB_parameters"],index=[0]).columns.to_list()
+    # Read and parse JSON
+    
+    with open(config_file, "r", encoding="utf-8-sig") as f:
+        config_json = json.load(f) 
+    
+    # Turn dict into DataFrame
+    colnames = list(config_json.keys())[:-1]
+    colnames += list(pd.DataFrame(config_json["DB_parameters"][0], index=[0]).columns)
+
     config_df = pd.DataFrame(columns=colnames)
-    for db in range(config_json.shape[0]):
-        new_line = pd.DataFrame(config_json.loc[db,"DB_parameters"],index=[0])
-        
-        new_line["path_to_saving_file"] = config_json['path_to_saving_file']
-        new_line["path_to_QC_file"] = config_json['path_to_QC_file']
-        config_df=pd.concat([config_df,new_line],axis=0,ignore_index=True)
+    for db in config_json["DB_parameters"]:
+        new_line = pd.DataFrame(db, index=[0])
+        new_line["path_to_saving_file"] = config_json["path_to_saving_file"]
+        new_line["path_to_QC_file"] = config_json["path_to_QC_file"]
+        config_df = pd.concat([config_df, new_line], axis=0, ignore_index=True)
+
     return config_df
 
 def create_TVC(time_trace,voltage_trace,current_trace):
@@ -1621,7 +1629,7 @@ def gather_Full_population_cell_Sweep_info(config_json_file):
             
             try:
                 
-                cell_dict = ordifunc.read_cell_file_h5(current_cell_id,
+                cell_dict = read_cell_file_h5(current_cell_id,
                                               current_db_config_line,
                                               selection = ["Sweep analysis"])
                 

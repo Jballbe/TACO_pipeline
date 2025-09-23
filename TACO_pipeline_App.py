@@ -425,6 +425,9 @@ def import_json_config_file(json_config_file):
     i=0
     for file in json_config_file:
         file_path = file['datapath']
+        
+        if not os.path.exists(file_path):
+            raise FileNotFoundError(f"File not found: {file_path}")
         if i == 0:
             config_df = ordifunc.open_json_config_file(file_path)
             i+=1
@@ -1181,7 +1184,7 @@ def server(input: Inputs, output: Outputs, session: Session):
             return "No file uploaded."
         else:
             json_config_file = input.json_file_input()
-            
+            print(json_config_file)
             config_df = import_json_config_file(json_config_file)
             
             #GEt nb of CPU cores to use
