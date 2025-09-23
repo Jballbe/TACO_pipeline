@@ -1,0 +1,23 @@
+name: TACO_pipeline_env
+channels:
+  - conda-forge
+  - defaults
+  - https://repo.anaconda.com/pkgs/main
+  - https://repo.anaconda.com/pkgs/r
+dependencies:
+  - python=3.11.8
+  - spyder
+  - numpy
+  - tqdm
+  - matplotlib
+  - anywidget
+  - h5py
+  - pandas
+  - lmfit
+  - plotnine
+  - scipy
+  - shiny
+  - plotly
+  - shinywidgets
+  - scikit-learn
+prefix: /opt/anaconda3/envs/TACO_pipeline_env
