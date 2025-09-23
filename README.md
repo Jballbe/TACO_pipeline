@@ -112,7 +112,7 @@ To visually inspect the analysis, the user can go (after completion of the analy
 
 ## Example use of the TACO pipeline
 
-We provide a few example cells originating from **two open-access databases**:
+We provide a Test_folder.zip containing few example cells originating from **two open-access databases**:
 
 - Da Silva Lantyer et al., 2018  
 - Harrison et al., 2015  
