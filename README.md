@@ -55,8 +55,9 @@ All scripts must be installed in a same directory.
 ## How to prepare a database to be used in the TACO pipeline?
 To be analysed in the TACO pipeline, a database must be documented (apart from the raw data) with some specific information, organized in 3 different components. As each database is created and stored in different ways, these database's descriptors are crucial to ensure their successfull processing by the TACO pipeline. We'll explain these different components, their utility, and give example for concrete databases:
 # Quick description of example databases:
-_(1) Allen Cell Type Database (Gouwens et al, 2019):_
+*(1) Allen Cell Type Database (Gouwens et al, 2019)*
 The different cells can be accessed using the allen software development kit, and CellTypeCache. After dowloading the specimen files of interest, a manifest json file is created to access the data through the allen SDK (see https://allensdk.readthedocs.io/en/latest/cell_types.html#cell-types-cache). The folder is then organized as follows:
+'''
 \Allen_CTB_folder
     manifest.json
     \specimen_565871768
@@ -65,27 +66,30 @@ The different cells can be accessed using the allen software development kit, an
     \specimen_605889373
         ephys.nwb
         ephys_sweeps.json     
-        
+'''
 For each specimen (=Cell_id), the different sweeps of the experiment (and their characteristics) can be accessed using the CellTypeCache (see https://allensdk.readthedocs.io/en/latest/cell_types.html#feature-extraction). Each sweep therefore has information about the stimulus start and end times, stimulus amplitude, ... accessible in the files.
     
-_(2) Da Silva Lantyer Database (Da Silva Lantyer et al., 2018)_
+*(2) Da Silva Lantyer Database (Da Silva Lantyer et al., 2018)*
 The raw traces are stored as matlab files (one file per cell). The folder can then be organized as follows:
+'''
 \Lantyer_Data
     \Original_matlab_file
         \161214_AL_113_CC.mat
         \170130_AL_133_CC.mat
-
+'''
 For each cell, the file contains the input current and membrane potential traces for the different sweeps. Each trace is named : Trace_a_b_c_d (with a=cell identifier, b=Protocol id, c= trace id and d =1 for input current and d= 2 for membrane potential)
 
-_(3) NVC database_
+*(3) NVC database*
+
 The host lab database is composed of protocol-based binary files (.ivb), organized by animal and cell recorded such that :
+'''
 \NVC_database
     \2016.03.28
         \cell 3
             \G_clamp
                 28175818.ivb
                 28180420.ivb
-        
+'''
 Such that animal folder is "2016.03.28", in which "cell 3" has been recorded, for which 2 protocols  have been recorded (i.e.: 28175818.ivb and 28180420.ivb)
 Each ivb file contains a header containing information about the stimulus amplitude, the increment of stimulus amplitude between sweeps, sampling rate... followed by the raw membrane potential and input current traces.
 
