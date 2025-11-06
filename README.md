@@ -122,10 +122,10 @@ This requirement is at the core of gathering different databases together, as it
 For each of these databases, the first step consists in gathering for each cell, the id of the sweep of interest, so that the combination of cell_id+sweep_id enables to directly access the appropriate file, and extract the corresponding traces.
 
 # How to design the files?
-Here are some guidelines to help you create the database's "Population Class table", "Cell Sweep table" and "Python script". 
-- Start by gathering the cell_id of the cells you want to analyze. Create a CSV table with columns "Cell_id" and "Database". This will correspond to the "Population Class table". You can add other columns that may be useful in subsequent analysis (e.g., "Recording temperature", "Animal", "Cortical area", "Cortical layer"...)
+Here are some guidelines to help you create the database's "*Population Class table*", "*Cell Sweep table*" and "*Python script*". 
+- Start by gathering the cell_id of the cells you want to analyze. Create a CSV table with columns "*Cell_id*" and "*Database*". This will correspond to the "*Population Class table*". You can add other columns that may be useful in subsequent analysis (e.g., "*Recording temperature*", "*Animal*", "*Cortical area*", "*Cortical layer*"...)
 - For each cell, gather the sweep_id you want to analyze. You can design the sweep_id as you like (e.g.: ivb_2344_3; 54; Sweep_01,...). This will serve as a basis to create the "Cell Sweep table". You can add other columns that may be useful to access the traces of a specific sweep, or information about stimulus start and end times...
-
+- To design the *Python script*, keep in mind that the purpose of the function is **at least** to extract for the different sweeps, the time traces, the membrane potential traces and the input current traces. Remember that the function takes as an input the database's *Cell sweep table*, notably to access the list of sweep_id. Thus, the function can benefit from the way you constructed the sweep_id to get to the correct file or trace location.
 
 # Be careful when designing these files:
 - The cell_id indicated in the "Population Class table" and "Cell Sweep table" **must be the same**, and **unique** across the different databases
