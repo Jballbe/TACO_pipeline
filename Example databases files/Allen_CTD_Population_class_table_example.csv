@@ -1,0 +1,3 @@
+,Cell_id,General_area,Sub_area,Layer,Dendrite_type,Hemisphere,cell_reporter_status,line_name,Database,Experiment,Animal,Recording_Temperature,Exc_Inh,Exc_Inh_FT,Cell_type,Layer_second,Donor_id
+0,565871768,VIS,VISp,5,aspiny,left,positive,Oxtr-T2A-Cre,Allen_Cell_Type_DB,In_Vitro,Mouse,34 C,--,--,--,5,563340157
+1286,605889373,VIS,VISp,2/3,aspiny,right,positive,Slc32a1-T2A-FlpO|Vipr2-IRES2-Cre,Allen_Cell_Type_DB,In_Vitro,Mouse,34 C,--,--,--,2/3,605622695

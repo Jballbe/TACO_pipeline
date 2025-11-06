@@ -52,6 +52,91 @@ The pipeline is composed of 8 different scripts:
 
 All scripts must be installed in a same directory.
 
+## How to prepare a database to be used in the TACO pipeline?
+To be analysed in the TACO pipeline, a database must be documented (apart from the raw data) with some specific information, organized in 3 different components. As each database is created and stored in different ways, these database's descriptors are crucial to ensure their successfull processing by the TACO pipeline. We'll explain these different components, their utility, and give example for concrete databases:
+# Quick description of example databases:
+_(1) Allen Cell Type Database (Gouwens et al, 2019):_
+The different cells can be accessed using the allen software development kit, and CellTypeCache. After dowloading the specimen files of interest, a manifest json file is created to access the data through the allen SDK (see https://allensdk.readthedocs.io/en/latest/cell_types.html#cell-types-cache). The folder is then organized as follows:
+\Allen_CTB_folder
+    manifest.json
+    \specimen_565871768
+        ephys.nwb
+        ephys_sweeps.json
+    \specimen_605889373
+        ephys.nwb
+        ephys_sweeps.json     
+        
+For each specimen (=Cell_id), the different sweeps of the experiment (and their characteristics) can be accessed using the CellTypeCache (see https://allensdk.readthedocs.io/en/latest/cell_types.html#feature-extraction). Each sweep therefore has information about the stimulus start and end times, stimulus amplitude, ... accessible in the files.
+    
+_(2) Da Silva Lantyer Database (Da Silva Lantyer et al., 2018)_
+The raw traces are stored as matlab files (one file per cell). The folder can then be organized as follows:
+\Lantyer_Data
+    \Original_matlab_file
+        \161214_AL_113_CC.mat
+        \170130_AL_133_CC.mat
+
+For each cell, the file contains the input current and membrane potential traces for the different sweeps. Each trace is named : Trace_a_b_c_d (with a=cell identifier, b=Protocol id, c= trace id and d =1 for input current and d= 2 for membrane potential)
+
+_(3) NVC database_
+The host lab database is composed of protocol-based binary files (.ivb), organized by animal and cell recorded such that :
+\NVC_database
+    \2016.03.28
+        \cell 3
+            \G_clamp
+                28175818.ivb
+                28180420.ivb
+        
+Such that animal folder is "2016.03.28", in which "cell 3" has been recorded, for which 2 protocols  have been recorded (i.e.: 28175818.ivb and 28180420.ivb)
+Each ivb file contains a header containing information about the stimulus amplitude, the increment of stimulus amplitude between sweeps, sampling rate... followed by the raw membrane potential and input current traces.
+
+For each database to be analyzed, 3 different files must be prepared:
+# 1- Population class table (.csv)
+This CSV file specifies and describes each cell present in the database. The only required information in this file is: 
+- Cell_id
+- Database
+Apart from the cell_id (which should be unique across all databases) and the name of the database it belongs to, no information is mandatory.
+Therefore, the file should have as many rows than there are cells in the database, and at least 2 columns (named *Cell_id* and *Database*)
+
+However, the more details can be attributed to each cell, regarding cellular information (e.g.: cell type, custom classification, cortical area, . . . ) or recording conditions (e.g.: age of the animal, recording temperature. . . ), the more details can be used in further analysis with other databases.
+
+
+# 2- Cell-Sweep table (.csv)
+This csv file describes, for each cell present in the database, the sweep to consider for the analysis. This information mainly concerns the organization of the database. The idea is that in any lab, any experiment performed on a cell is fundamentally a collection of sweeps. Most of the time, databases of current-clamp recordings organize their data so that different sweeps can easily be accessed, notably by indexing them separately by giving them a unique sweep id. However, it should be noted that some databases may not directly provide such information directly but rather provide method to understand the storage of the experiment, which results in the a-posteriori definition of sweep ids. Also, some databases may store in a same file, multiple kind of recordings. This is notably the case for the Allen Cell Type Database which recorded for each cell different protocols of current-clamp experiments (i.e.: long square stimulus, short square stimulus, noise…). By specifying this information for any cell of the database, it allows to ensure that only the same kind of protocols are considered, to keep track of the sweeps present in an experiment and organize the analysis in a trace-based fashion.
+The only required information in this file is:
+- Cell_id
+- Sweep_id
+Apart from the cell_id (which should be unique across all databases, and match those present in the "Population class table") and the sweep_id to consider, no information is mandatory.
+Therefore, the file should have as many rows than there are sweeps to use in the database, and at least 2 columns (named "Cell_id" and "Sweep_id")
+Other sweep-related information that can be useful to access the traces (e.g.: stimulus amplitude, stimulus start and end times, ...) can be stored in other columns
+
+
+# 3- Trace extraction Python script (.py)
+The last required element for the integration of a database, is a Python code defining a function, which given a) a path toward a cell file, b) the cell_id, c) the list of sweep_id of interest, and d) the database's cell sweep table; and returns at least the lists of the corresponding voltage, current and time traces; and if applicable the lists of stimulus start and end times (if it doesn’t, the pipeline will automatically estimate the stimulus start and end times by performing autocorrelation on the current trace first time derivative, based on the stimulus duration provided by the database).
+
+This requirement is at the core of gathering different databases together, as it is the only portion of the pipeline relative to the structure of the original databases. The purpose of this function is to describe how to access the raw data for a given database, without any need to manually integrate it into the pipeline. Indeed, the pipeline automatically import the function, provide it with relevant inputs, and receives the lists corresponding traces which will undergo the analysis. 
+
+For each of these databases, the first step consists in gathering for each cell, the id of the sweep of interest, so that the combination of cell_id+sweep_id enables to directly access the appropriate file, and extract the corresponding traces.
+
+# How to design the files?
+Here are some guidelines to help you create the database's "Population Class table", "Cell Sweep table" and "Python script". 
+- Start by gathering the cell_id of the cells you want to analyze. Create a CSV table with columns "Cell_id" and "Database". This will correspond to the "Population Class table". You can add other columns that may be useful in subsequent analysis (e.g., "Recording temperature", "Animal", "Cortical area", "Cortical layer"...)
+- For each cell, gather the sweep_id you want to analyze. You can design the sweep_id as you like (e.g.: ivb_2344_3; 54; Sweep_01,...). This will serve as a basis to create the "Cell Sweep table". You can add other columns that may be useful to access the traces of a specific sweep, or information about stimulus start and end times...
+
+
+# Be careful when designing these files:
+- The cell_id indicated in the "Population Class table" and "Cell Sweep table" **must be the same**, and **unique** across the different databases
+- the database's name indicated in the "Population Class table" **must be the same** than the name of the database indicated in the config json file (see later: (1) Preparing the analysis)
+- Be careful that for a specific cell, each sweep_id is **unique**
+- Be careful of the names of the mandatory columns used in the "Population Class table" and the "Cell Sweep table". These should be "Cell_id" and "Database" for "Population Class table" and "Cell_id" and "Sweep_id" for the "Cell Sweep table".
+- When writing the database's specific python script, if any library is required it should be imported at the top of the file.
+- Be careful that the order of database's function **inputs** follows the order : cell_file_folder, cell_id, sweep_list, cell_sweep_table
+- Be careful that the order of database's function **outputs** follows the order : time_trace_list, potential_trace_list, current_trace_list
+- In the case where the database's files contain stimulus start and end files, be careful that the order of database's function **outputs** follows the order : time_trace_list, potential_trace_list, current_trace_list
+
+# Example files for Allen CTD, Da Silva Lantyer Database, and NVC Database
+You can find in the folder *Example databases files* example files for each of the database we described earlier.
+
+
 ## How to use the TACO pipeline
 The pipeline is used through a Shiny-based GUI.  
 To start the application, the user can follow the steps:
