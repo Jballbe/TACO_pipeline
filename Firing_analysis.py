@@ -79,7 +79,7 @@ def compute_cell_features(Full_SF_table,cell_sweep_info_table,response_duration_
             stim_freq_table = get_stim_freq_table(
                 Full_SF_table.copy(), cell_sweep_info_table.copy(),sweep_QC_table.copy(), output_duration,response_type)
     
-            pruning_obs, do_fit = data_pruning_I_O(stim_freq_table,cell_sweep_info_table)
+            pruning_obs, do_fit, condition_table = data_pruning_I_O(stim_freq_table,cell_sweep_info_table)
 
             if do_fit == True:
                 
@@ -245,7 +245,7 @@ def get_stim_freq_table(original_SF_table, original_cell_sweep_info_table,sweep_
     
     return stim_freq_table
 
-def data_pruning_I_O(original_stim_freq_table,cell_sweep_info_table):
+def data_pruning_I_O_old(original_stim_freq_table,cell_sweep_info_table):
     '''
     For a given set of couple (Input_current - Stim_Freq), test wether there is enough information before proceeding to IO fit.
     Test the number of non-zero response, the number of different non-zero response
@@ -305,6 +305,256 @@ def data_pruning_I_O(original_stim_freq_table,cell_sweep_info_table):
     obs = '--'
     do_fit = True
     return obs, do_fit
+
+def data_pruning_I_O(original_stim_freq_table,cell_sweep_info_table):
+    '''
+    For a given set of couple (Input_current - Stim_Freq), test wether there is enough information before proceeding to IO fit.
+    Test the number of non-zero response, the number of different non-zero response
+    Estimate the original frequency step, to avoid fitting continuous IO curve to Type II neurons
+
+    Parameters
+    ----------
+    original_stim_freq_table : pd.DataFrame
+        DataFrame containing one row per sweep, with the corresponding input current and firing frequency.
+        
+    cell_sweep_info_table : pd.DataFraem
+        DESCRIPTION.
+
+    Returns
+    -------
+    obs : str
+        If do_fit == False, then obs contains the reason why no to proceed to IO fit .
+    do_fit : bool
+        Wether or not proceeding to IO fit.
+
+    '''
+    stim_freq_table=original_stim_freq_table.copy()
+    stim_freq_table=stim_freq_table[stim_freq_table["Passed_QC"]==True]
+    stim_freq_table = stim_freq_table.sort_values(
+        by=['Stim_amp_pA', 'Frequency_Hz'])
+    
+    frequency_array = np.array(stim_freq_table.loc[:, 'Frequency_Hz'])
+    obs = '-'
+    do_fit = True
+    condition_lines_list = []
+    
+    non_zero_freq = frequency_array[np.where(frequency_array > 0)]
+   
+    ##### -- Minimum 4 non-zero responses --
+    condition = "Minimum 4 non zero responses"
+    non_zero_responses = np.count_nonzero(frequency_array)
+    
+    if non_zero_responses < 4:
+        condition_result = False
+        obs = 'Less_than_4_response'
+        do_fit = False
+        
+        condition_line = pd.DataFrame([condition, 
+                                     non_zero_responses,
+                                     condition_result]).T
+        condition_line.columns = ['Condition', 'Value', 'Condition passed']
+        condition_lines_list.append(condition_line)
+        
+        condition_table = pd.concat(condition_lines_list, ignore_index = True)
+        return obs, do_fit, condition_table
+    else:
+        condition_result = True
+        condition_line = pd.DataFrame([condition, 
+                                     non_zero_responses,
+                                     condition_result]).T
+        condition_line.columns = ['Condition', 'Value', 'Condition passed']
+        condition_lines_list.append(condition_line)
+        condition_result = True
+    
+    
+    
+    ##### -- Minimum 3 different non zero frequency --
+
+    condition = "Minimum 3 different frequencies"
+    nb_non_zero_freq_diff = len(np.unique(non_zero_freq))
+    
+    
+    if nb_non_zero_freq_diff < 3:
+        condition_result = False
+        obs = 'Less_than_3_different_frequencies'
+        do_fit = False
+        condition_line = pd.DataFrame([condition, 
+                                     nb_non_zero_freq_diff,
+                                     condition_result]).T
+        condition_line.columns = ['Condition', 'Value', 'Condition passed']
+        condition_lines_list.append(condition_line)
+        
+        condition_table = pd.concat(condition_lines_list, ignore_index = True)
+        return obs, do_fit, condition_table  
+    else:
+        condition_result = True
+        condition_line = pd.DataFrame([condition, 
+                                     nb_non_zero_freq_diff,
+                                     condition_result]).T
+        condition_line.columns = ['Condition', 'Value', 'Condition passed']
+        condition_lines_list.append(condition_line)
+        condition_result = True
+        
+    
+    
+    
+    ##### -- Maximum frequency jump = 30Hz
+   
+    condition = "Initial frequency jump <= 30Hz"
+    minimum_frequency_step = get_min_freq_step(stim_freq_table,do_plot=False)[0]
+    
+    if minimum_frequency_step >30:
+        condition_result = False
+        obs = 'Minimum_frequency_step_higher_than_30Hz'
+        do_fit = False
+        condition_line = pd.DataFrame([condition, 
+                                     minimum_frequency_step,
+                                     condition_result]).T
+        condition_line.columns = ['Condition', 'Value', 'Condition passed']
+        condition_lines_list.append(condition_line)
+        condition_table = pd.concat(condition_lines_list, ignore_index = True)
+        return obs, do_fit, condition_table 
+        
+        #return obs, do_fit
+    else:
+        condition_result = True
+        condition_line = pd.DataFrame([condition, 
+                                     minimum_frequency_step,
+                                     condition_result]).T
+        condition_line.columns = ['Condition', 'Value', 'Condition passed']
+        condition_lines_list.append(condition_line)
+    
+    
+    try:
+        original_data_table =  original_stim_freq_table.copy()
+        original_data_table = original_data_table.dropna()
+        
+        original_data_subset_QC = original_data_table.copy()
+        if 'Passed_QC' in original_data_subset_QC.columns:
+            original_data_subset_QC=original_data_subset_QC[original_data_subset_QC['Passed_QC']==True]
+        
+        
+    
+        original_data_subset_QC = original_data_subset_QC.sort_values(by=['Stim_amp_pA','Frequency_Hz'])
+        
+        trimmed_stimulus_frequency_table=original_data_subset_QC.copy()
+        trimmed_stimulus_frequency_table=trimmed_stimulus_frequency_table.reset_index(drop=True)
+        trimmed_stimulus_frequency_table=trimmed_stimulus_frequency_table.sort_values(by=['Stim_amp_pA','Frequency_Hz'])
+        
+        
+        ### 0 - Trim Data
+        
+        response_threshold_ascending = np.nanmax(trimmed_stimulus_frequency_table.loc[:,"Frequency_Hz"])/10
+        response_threshold_descending = np.nanmax(trimmed_stimulus_frequency_table.loc[:,"Frequency_Hz"])/2 
+        
+
+        trimmed_stimulus_frequency_table = trimmed_stimulus_frequency_table.reset_index(drop=True)
+        last_zero_response_ascending = np.nan
+        for elt in trimmed_stimulus_frequency_table.index:
+            if trimmed_stimulus_frequency_table.loc[elt,"Frequency_Hz"] == 0.:
+                last_zero_response_ascending = elt
+            if trimmed_stimulus_frequency_table.loc[elt,"Frequency_Hz"] >= response_threshold_ascending:
+                n_ref = elt
+                break
+            n_ref = np.nan
+        
+        for elt in trimmed_stimulus_frequency_table.index[::-1]:
+            if trimmed_stimulus_frequency_table.loc[elt,"Frequency_Hz"] >= response_threshold_descending:
+                N_theta_one = elt
+                break
+            N_theta_one = np.nan
+            
+        #Either trim fromthe last zero response before n_ref or if no zero response, from the last sweep before threshold(n_ref-1)
+        if np.isnan(last_zero_response_ascending):
+            N_theta_zero = int(n_ref-1)
+        else:
+            N_theta_zero = int(last_zero_response_ascending)
+            
+        trimmed_space_start = int(np.nanmax([0,N_theta_zero]))
+        trimmed_space_end = int(np.nanmin([original_data_subset_QC.shape[0],int(N_theta_one+1)]))
+        trimmed_stimulus_frequency_table = trimmed_stimulus_frequency_table.loc[trimmed_space_start:trimmed_space_end]
+        
+        
+        
+        
+        ### 0 - end
+        
+        ### 1 - Try to fit a 3rd order polynomial
+        trimmed_stimulus_frequency_table=trimmed_stimulus_frequency_table.sort_values(by=['Stim_amp_pA','Frequency_Hz'])
+        trimmed_stimulus_frequency_table = trimmed_stimulus_frequency_table.reset_index(drop=True)
+
+        trimmed_x_data=np.array(trimmed_stimulus_frequency_table.loc[:,'Stim_amp_pA'])
+        trimmed_y_data=np.array(trimmed_stimulus_frequency_table.loc[:,"Frequency_Hz"])
+        extended_x_trimmed_data=pd.Series(np.arange(min(trimmed_x_data),max(trimmed_x_data),.1))
+        
+        #Check for iverfitting conditions before polynomial fit
+        
+        non_zero_trimmed_stimulus_frequency_table = trimmed_stimulus_frequency_table.copy()
+        non_zero_trimmed_stimulus_frequency_table = non_zero_trimmed_stimulus_frequency_table.loc[non_zero_trimmed_stimulus_frequency_table['Frequency_Hz']!=0,:]
+        
+        condition = "Polynomial fit requires more than 3 values"
+        nb_of_values = non_zero_trimmed_stimulus_frequency_table.shape[0]
+        
+        if nb_of_values < 4:
+            condition_result = False
+            obs = 'Trimmed data has less than 3 data to fit polynomial'
+            do_fit = False
+            
+            condition_line = pd.DataFrame([condition, 
+                                         nb_of_values,
+                                         condition_result]).T
+            condition_line.columns = ['Condition', 'Value', 'Condition passed']
+            condition_lines_list.append(condition_line)
+            condition_table = pd.concat(condition_lines_list, ignore_index = True)
+            return obs, do_fit, condition_table 
+            
+            
+        else:
+            condition_result = True
+            condition_line = pd.DataFrame([condition, 
+                                         nb_of_values,
+                                         condition_result]).T
+            condition_line.columns = ['Condition', 'Value', 'Condition passed']
+            condition_lines_list.append(condition_line)
+        
+            
+
+        
+        min_trimmed_x_data = np.nanmin(trimmed_x_data)
+        max_trimmed_x_data = np.nanmax(trimmed_x_data)
+        
+        intervals = np.linspace(min_trimmed_x_data, max_trimmed_x_data, 9) #Devide the stimulus-space into 8 windows (9 boundaries)
+        count_values_per_interval = np.histogram(trimmed_x_data, bins = intervals)[0]
+       
+        non_zero_count_interval = np.sum(count_values_per_interval > 0)
+        
+        condition = "Stimulus span over 4 different intervals"
+        if non_zero_count_interval < 4:
+            condition_result = False
+            obs = 'Stimulus span over less than 4 different intervals'
+            do_fit = False
+            condition_line = pd.DataFrame([condition, 
+                                         non_zero_count_interval,
+                                         condition_result]).T
+            condition_line.columns = ['Condition', 'Value', 'Condition passed']
+            condition_lines_list.append(condition_line)
+            condition_table = pd.concat(condition_lines_list, ignore_index = True)
+            return obs, do_fit, condition_table 
+        else:
+            condition_result = True
+            condition_line = pd.DataFrame([condition, 
+                                         non_zero_count_interval,
+                                         condition_result]).T
+            condition_line.columns = ['Condition', 'Value', 'Condition passed']
+            condition_lines_list.append(condition_line)
+    except Exception as e:
+        condition_table = pd.concat(condition_lines_list, ignore_index = True)
+        return obs, do_fit, condition_table 
+    
+    obs = '--'
+    do_fit = True
+    condition_table = pd.concat(condition_lines_list, ignore_index = True)
+    return obs, do_fit, condition_table
 
 
 def get_IO_features(original_stimulus_frequency_table,response_type, response_duration, cell_id='--', do_plot = False, print_plot = False):
@@ -2242,7 +2492,7 @@ def fit_adaptation_test(interval_frequency_table_init,do_plot=False):
         
         
         interval_frequency_table.loc[:,'Spike_Interval']=interval_frequency_table.loc[:,'Spike_Interval'].astype(float)
-        
+
         interval_frequency_table=interval_frequency_table.astype({"Spike_Interval":"float",
                                                                   "Normalized_feature":"float",
                                                                   "Stimulus_amp_pA":'float'})

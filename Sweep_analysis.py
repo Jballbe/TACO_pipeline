@@ -840,7 +840,7 @@ def plot_estimate_input_resistance_and_resting_potential(plot_dict, sampling_ste
     fig.update_xaxes(title_text="Input Current (pA)", row=1, col=2)  # X-axis for plot 3
     fig.update_yaxes(title_text="Membrane Potential (mV)", row=1, col=2)  # Y-axis for plot 3
     
-    fig.update_layout(height=900, width=1200, showlegend=False)
+    fig.update_layout(height=700, width=700, showlegend=False)
     if TACO_App:
         
         return fig

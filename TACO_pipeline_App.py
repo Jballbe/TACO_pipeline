@@ -12,28 +12,28 @@ import os
 import importlib
 import json
 import ast
-from shiny import App, Inputs, Outputs, Session, render, ui,reactive,req
+from shiny import App, Inputs, Outputs, Session, render, ui,reactive
 import math
 import time
 import concurrent
 import random
+import traceback
 import Analysis_pipeline as analysis_pipeline
 import Sweep_analysis as sw_an
 import Spike_analysis as sp_an
 import Firing_analysis as fir_an
 import Ordinary_functions as ordifunc
-import plotnine as p9
 import plotly.graph_objects as go
 from shinywidgets import output_widget, render_widget
 import plotly.express as px
 import matplotlib.cm as cm
 import matplotlib.pyplot as plt
-import io
 from sklearn.metrics import r2_score 
-import sys
 from plotly.express.colors import sample_colorscale
 from plotly.subplots import make_subplots
 from sklearn.preprocessing import minmax_scale 
+import TACO_pipeline_plots as TACO_plots
+
 
 
 # # Load the external script dynamically
@@ -216,6 +216,7 @@ app_ui = ui.page_fluid(
         
         ui.nav_panel(
             "Cell Visualization",
+            
             ui.navset_card_pill(
                 # Encapsulate existing tabs into the "Cell Visualization" nav_pill
                 ui.nav_panel(
@@ -227,60 +228,101 @@ app_ui = ui.page_fluid(
                             ui.input_action_button('Update_cell_btn', 'Update Cell'),
                         ),
                         #ui.panel_main(
-                            ui.output_table('config_json_table')
+                        ui.layout_column_wrap(
+                            ui.card(
+                                ui.card_header("Analysis JSON file"),
+                                ui.output_data_frame('config_json_table')
+                                ),
+                            ui.card(
+                                ui.card_header("Cell file processing"),
+                                ui.output_ui("processing_status_output")
+                                )
+                            ),
+                            
+                            
                         #),
                     ),
                 ),
                 ui.nav_panel(
                     "Cell Information",
-                    ui.navset_tab(
+                    ui.navset_card_pill(
                         ui.nav_panel(
                             "Cell summary",
-                            ui.row(
-                                ui.column(2, ui.output_table("Cell_Metadata_table")),
-                                ui.column(2, ui.output_table("Cell_linear_properties_table")),
-                                ui.column(
-                                    4,
-                                    ui.output_table("Cell_Firing_properties_table"),
-                                    ui.output_table("Cell_Adaptation_table"),
-                                ),
-                            ),
+                            ui.layout_column_wrap(
+                                   
+                                   
+                                ui.card(
+                                        ui.card_header(
+                                                        ui.tags.span(
+                                                            "Cell metadata",
+                                                            style="font-weight: bold; font-size: 20px; text-align: center; display: block;"
+                                                        )
+                                                    ),
+                                        ui.output_data_frame("Cell_Metadata_table"),
+                                    ),
+                                
+                                ui.card(
+                                        ui.card_header(
+                                                        ui.tags.span(
+                                                            "Linear properties",
+                                                            style="font-weight: bold; font-size: 20px; text-align: center; display: block;"
+                                                        )
+                                                    ),
+                                        ui.output_data_frame("Cell_linear_properties_table"),
+                                    ),
+                                
+                                ui.card(
+                                        ui.card_header(
+                                                        ui.tags.span(
+                                                            "Firing properties",
+                                                            style="font-weight: bold; font-size: 20px; text-align: center; display: block;"
+                                                        )
+                                                    ),
+                                        ui.output_data_frame("Cell_Firing_properties_table"),
+                                    ),
+                                
+                                ui.card(
+                                        ui.card_header(
+                                                        ui.tags.span(
+                                                            "Adaptation properties",
+                                                            style="font-weight: bold; font-size: 20px; text-align: center; display: block;"
+                                                        )
+                                                    ),
+                                        ui.output_data_frame("Cell_Adaptation_table"),
+                                    ),
+                                   
+                                
+                            fill = False),
                         ),
-                        ui.nav_panel(
-                            "Linear properties",
-                            ui.row(
-                                ui.column(
-                                    4,
-                                    output_widget("cell_Holding_potential_v_Holding_current_plolty"),
-                                    output_widget("cell_SS_potential_v_stim_amp_plolty"),
-                                ),
-                                ui.column(
-                                    4,
-                                    output_widget("cell_input_resistance_v_stim_amp_plolty"),
-                                    output_widget('cell_time_constant_v_stim_amp_plolty'),
-                                ),
-                                ui.column(
-                                    4,
-                                    output_widget("cell_Holding_current_pA_v_stim_amp_plolty"),
-                                    output_widget("cell_Holding_potential_mV_v_stim_amp_plolty"),
-                                ),
-                            ),
-                        ),
+                        # ui.nav_panel(
+                        #     "Linear properties",
+                        #     ui.row(
+                        #         ui.column(
+                        #             4,
+                        #             output_widget("cell_Holding_potential_v_Holding_current_plolty"),
+                        #             output_widget("cell_SS_potential_v_stim_amp_plolty"),
+                        #         ),
+                        #         ui.column(
+                        #             4,
+                        #             output_widget("cell_input_resistance_v_stim_amp_plolty"),
+                        #             output_widget('cell_time_constant_v_stim_amp_plolty'),
+                        #         ),
+                        #         ui.column(
+                        #             4,
+                        #             output_widget("cell_Holding_current_pA_v_stim_amp_plolty"),
+                        #             output_widget("cell_Holding_potential_mV_v_stim_amp_plolty"),
+                        #         ),
+                        #     ),
+                        # ),
                         
                             
                             
                         ui.nav_panel(
                             "Processing report",
-                            ui.output_table('cell_processing_time_table')
+                            ui.output_data_frame('cell_processing_time_table')
                         ),
                     ),
-                    # ui.layout_sidebar(
-                    #     ui.sidebar(),
-                    #     #ui.panel_main(
-                            
-                            
-                    #     #),
-                    # ),
+                    
                 ),
                 ui.nav_panel(
                     "Sweep Analysis",
@@ -291,16 +333,60 @@ app_ui = ui.page_fluid(
                             ui.input_checkbox("Superimpose_BE_Correction", "Superimpose BE Correction"),
                             
                         ),
-                        #ui.panel_main(
-                            ui.navset_tab(
+
+                            ui.navset_card_pill(
                                 ui.nav_panel(
                                     "Sweep information",
-                                    ui.output_data_frame('Sweep_info_table')
+                                    ui.card(
+                                            ui.card_header(
+                                                            ui.tags.span(
+                                                                "Sweep properties",
+                                                                style="font-weight: bold; font-size: 20px; text-align: center; display: block;"
+                                                            )
+                                                        ),
+                                            ui.layout_columns(
+                                                ui.input_action_button("trigger_sweep_info_table_saving", "💾 Save Sweep properties table")
+                                                ),
+                                            ui.output_data_frame('Sweep_info_table')
+                                        ),
+                                    ui.card(
+                                            ui.card_header(
+                                                            ui.tags.span(
+                                                                "Quality Criteria evaluation",
+                                                                style="font-weight: bold; font-size: 20px; text-align: center; display: block;"
+                                                            )
+                                                        ),
+                                            ui.layout_columns(
+                                                ui.input_action_button("trigger_sweep_QC_table_saving", "💾 Save Sweep QC table")
+                                                ),
+                                            ui.output_data_frame('Sweep_QC_table')
+                                        ),
+                                    
                                 ),
+                                
                                 ui.nav_panel(
                                     'Spike Analysis',
-                                    output_widget('Sweep_spike_plotly'),
-                                    ui.output_data_frame('Sweep_spike_features_table')
+                                    
+                                    
+                                    ui.card(ui.card_header("Time-Voltage-Current (TVC) plot with spikes features"),
+                                            ui.layout_columns(
+                                                                ui.input_action_button("trigger_tvc_table_saving", "💾 Save TVC table"),
+                                                                ui.input_action_button("trigger_tvc_plot_saving", "📊 Save TVC plot")
+                                                            ),
+                                            output_widget("Sweep_spike_plotly"),
+                                            
+                                            full_screen = True
+                                        ),
+                                    ui.card(
+                                        ui.card_header("Spikes features"),
+                                        ui.layout_columns(
+                                            ui.input_action_button("trigger_spike_table_saving", "💾 Save Spike features table")
+                                            ),
+                                        ui.output_data_frame('Sweep_spike_features_table'),
+                                        full_screen = True
+                                        ),
+                                    
+                                    
                                 ),
                                 ui.nav_panel(
                                     "Spike phase plot",
@@ -309,28 +395,76 @@ app_ui = ui.page_fluid(
                                         ui.column(6, output_widget("Spike_phase_plane_plot")),
                                     ),
                                 ),
-                                ui.nav_panel(
-                                    'Sweep_QC',
-                                    ui.output_table('Sweep_QC_table')
-                                ),
+                                
                                 ui.nav_panel(
                                     'Bridge Error analysis',
-                                    output_widget("BE_plotly"),
-                                    ui.output_text_verbatim("BE_value"),
-                                    ui.output_table('BE_conditions_table'),
+                                    
+                                    
+                                    ui.card(ui.card_header("Bridge Error fit"),
+                                            ui.input_action_button("trigger_BE_plot_saving", "📊 Save BE plot"),
+                                            output_widget("BE_plotly"),
+                                    ),
+                                    
+                                    ui.layout_columns(
+                                        ui.card(ui.card_header("Bridge Error fit values"),
+                                                ui.input_action_button("trigger_BE_fit_table_saving", "💾 Save BE fit table"),
+                                                ui.output_data_frame('BE_fit_values_table')
+                                        ),
+                                        ui.card(ui.card_header("Bridge Error conditions table"),
+                                                ui.input_action_button("trigger_BE_conditions_table_saving", "💾 Save BE conditions table"),
+                                                ui.output_data_frame('BE_conditions_table'),
+                                        ),
+                                                      ),
+                                    
+                                    #ui.output_text_verbatim("BE_value"),
+                                    
+                                    
                                 ),
                                 ui.nav_panel(
                                     'Linear properties analysis',
-                                    #ui.output_table("linear_properties_conditions_table"),
-                                    ui.output_table("condition_table"),
-                                    ui.output_table("sweep_properties_table"),
+                                    
                                     ui.row(
-                                        output_widget("cell_Input_Resitance_analysis"),
-                                        ui.output_table("linear_properties_fit_table"),
-                                        output_widget("cell_Time_cst_analysis"))
+                                        ui.card(
+                                            ui.card_header("Linear analysis results"),
+                                            ui.layout_columns(
+                                                ui.input_action_button("trigger_linear_properties_table_saving", "💾 Save Linear properties table"),
+                                                ),
+                                            ui.output_data_frame("sweep_linear_properties_table"),
+                                            full_screen=True,
+                                            )
+                                        ),
+                                    ui.row(
+                                        ui.column(6,
+                                            ui.card(
+                                                ui.card_header("IR analysis"),
+                                                ui.layout_columns(
+                                                    ui.input_action_button("trigger_IR_table_saving", "💾 Save Input Resistance conditions table"),
+                                                    ui.input_action_button("trigger_IR_plot_saving", "📊 Save Input Resistance fit plot")
+                                                    ),
+                                                ui.output_data_frame("IR_validation_condition_table"),
+                                                output_widget("cell_Input_Resitance_analysis"),
+                                                full_screen=True,
+                                            )
+                                        ),
+                                
+                                        ui.column(6,
+                                            ui.card(
+                                                ui.card_header("TC analysis"),
+                                                ui.layout_columns(
+                                                    ui.input_action_button("trigger_TC_analysis_table_saving", "💾 Save TC analysis table"),
+                                                    ui.input_action_button("trigger_TC_analysis_plot_saving", "📊 Save TC analysis plot")
+                                                    ),
+                                                ui.output_data_frame("TC_fit_table"),
+                                                output_widget("cell_Time_cst_analysis"),
+                                                full_screen=True,
+                                            )
+                                        ),
+                                        ),
+                                    
+                                    
                                 ),
                             ),
-                       # ),
+
                     ),
                 ),
                 ui.nav_panel(
@@ -344,43 +478,165 @@ app_ui = ui.page_fluid(
                         ),
                             ),
                         #ui.panel_main(
-                            ui.navset_tab(
-                                ui.nav_panel(
-                                    "I/O",
-                                    
-                                    output_widget("Time_based_IO_plotly"),
-                                    ui.row(
-                                        ui.column(2, ui.tags.b("Gain"), output_widget("Gain_regression_plot")),
-                                        ui.column(2, ui.tags.b("Threshold"), output_widget("Threshold_regression_plot")),
-                                        ui.column(2, ui.tags.b("Saturation Frequency"), output_widget("Saturation_Frequency_regression_plot")),
-                                        ui.column(2, ui.tags.b("Saturation Stimulus"), output_widget("Saturation_Stimulus_regression_plot")),
-                                        ui.column(2, ui.tags.b("Response Failure Frequency"), output_widget("Response_Failure_Frequency_regression_plot")),
-                                        ui.column(2, ui.tags.b("Response Failure Stimulus"), output_widget("Response_Failure_Stimulus_regression_plot"))
-                                    ),
-                                    ui.row(
-                                        ui.column(2, ui.output_table("Gain_regression_table_time_based")),
-                                        ui.column(2, ui.output_table("Threshold_regression_table")),
-                                        ui.column(2, ui.output_table("Saturation_Frequency_regression")),
-                                        ui.column(2, ui.output_table("Saturation_Stimulus_regression")),
-                                        ui.column(2, ui.output_table("Response_Fail_Frequency_regression")),
-                                        ui.column(2, ui.output_table("Response_Fail_Stimulus_regression"))
-                                    )
+                            ui.navset_card_pill(
+                                
+                                
+                                ui.nav_panel("I/O",
+
+                                            # --- Main IO plot at the top ---
+                                            ui.card(
+                                                ui.card_header("I/O Plot"),
+                                                ui.input_action_button("trigger_IO_plot_saving", "📊 Save IO fit plot"),
+                                                output_widget("IO_plotly"),
+                                                full_screen=True,
+                                            ),
+                                        
+                                            # --- Features in a single row ---
+                                            ui.row(
+                                        
+                                                ui.column(4,
+                                                    ui.card(
+                                                        ui.card_header("Gain"),
+                                                        ui.layout_column_wrap(
+                                                            ui.input_action_button("trigger_gain_regression_plot_saving", "📊 Save plot"),
+                                                            ui.input_action_button("trigger_gain_regression_table_saving", "💾 Save table"),
+                                                            
+                                                            ),
+                                                        output_widget("Gain_regression_plot"),
+                                                        ui.output_data_frame("Gain_regression_table"),
+
+                                                    )
+                                                ),
+                                        
+                                                ui.column(4,
+                                                    ui.card(
+                                                        ui.card_header("Threshold"),
+                                                        ui.layout_column_wrap(
+                                                            ui.input_action_button("trigger_threshold_regression_plot_saving", "📊 Save plot"),
+                                                            ui.input_action_button("trigger_threshold_regression_table_saving", "💾 Save table"),
+                                                            
+                                                            ),
+                                                        output_widget("Threshold_regression_plot"),
+                                                        ui.output_data_frame("Threshold_regression_table"),
+
+                                                    )
+                                                ),
+                                        
+                                                ui.column(4,
+                                                    ui.card(
+                                                        ui.card_header("Saturation Frequency"),
+                                                        ui.layout_column_wrap(
+                                                            ui.input_action_button("trigger_sat_freq_regression_plot_saving", "📊 Save plot"),
+                                                            ui.input_action_button("trigger_sat_freq_regression_table_saving", "💾 Save table"),
+                                                            
+                                                            ),
+                                                        output_widget("Saturation_Frequency_regression_plot"),
+                                                        ui.output_data_frame("Saturation_Frequency_regression_table"),
+
+                                                    )
+                                                )),
+                                            ui.row(
+                                                ui.column(4,
+                                                    ui.card(
+                                                        ui.card_header("Saturation Stimulus"),
+                                                        ui.layout_column_wrap(
+                                                            ui.input_action_button("trigger_sat_stim_regression_plot_saving", "📊 Save plot"),
+                                                            ui.input_action_button("trigger_sat_stim_regression_table_saving", "💾 Save table"),
+                                                            
+                                                            ),
+                                                        output_widget("Saturation_Stimulus_regression_plot"),
+                                                        ui.output_data_frame("Saturation_Stimulus_regression_table"),
+
+                                                    )
+                                                ),
+                                        
+                                                ui.column(4,
+                                                    ui.card(
+                                                        ui.card_header("Response Failure Frequency"),
+                                                        ui.layout_column_wrap(
+                                                            ui.input_action_button("trigger_Response_fail_freq_regression_plot_saving", "📊 Save plot"),
+                                                            ui.input_action_button("trigger_Response_fail_freq_regression_table_saving", "💾 Save table"),
+                                                            
+                                                            ),
+                                                        output_widget("Response_Failure_Frequency_regression_plot"),
+                                                        ui.output_data_frame("Response_Fail_Frequency_regression_table"),
+                                                     
+                                                    )
+                                                ),
+                                        
+                                                ui.column(4,
+                                                    ui.card(
+                                                        ui.card_header("Response Failure Stimulus"),
+                                                        ui.layout_column_wrap(
+                                                            ui.input_action_button("trigger_Response_fail_stim_regression_plot_saving", "📊 Save plot"),
+                                                            ui.input_action_button("trigger_Response_fail_stim_regression_table_saving", "💾 Save table"),
+                                                            
+                                                            ),
+                                                        output_widget("Response_Failure_Stimulus_regression_plot"),
+                                                        ui.output_data_frame("Response_Fail_Stimulus_regression_table"),
+
+                                                    )
+                                                ),
+                                            )
+                                            
                                 ),
+                                
+                                
                                 ui.nav_panel(
-                                    "Details",
+                                    "IO detailed fit",
                                     ui.row(
                                         
                                         ui.input_select('Firing_output_duration_new', 'Select output duration for fitting explanation', choices=[]),
-                                        ui.input_selectize('Plot_new', "Select plot to display", choices=[]),
                                     ),
-                                    output_widget("IO_analysis_plotly"),
-                                    ui.output_table("IO_fit_parameter_table")
+                                    ui.layout_column_wrap(
+                                        ui.card(
+                                            ui.card_header("Detailed IO fit"),
+                                            ui.input_action_button("trigger_IO_detailed_plot_saving", "📊 Save IO fit plot"),
+                                            output_widget("IO_analysis_plotly"),
+                                            full_screen=True,
+                                        ),
+                                        ui.card(
+                                            ui.card_header("Stimulus-Frequency table"),
+                                            ui.input_action_button("trigger_stim_freq_table_saving", "💾 Save Stimulus-Frequency table"),
+                                            ui.output_data_frame("IO_fit_stim_freq_table"),
+                                            full_screen=True,
+                                        ),
+
+                                        ),
+                                    ui.layout_column_wrap(
+                                        ui.card(
+                                            ui.card_header('IO fit conditions'),
+                                            ui.input_action_button("trigger_IO_fit_conditions_table_saving", "💾 Save IO fit conditions table"),
+                                            ui.output_data_frame("IO_fit_pruning_obs_table"),
+                                            full_screen = True))
+                                    
+                                    
+                                    
                                 ),
                                 ui.nav_panel(
                                     "Adaptation",
-                                    ui.input_select('Adaptation_feature_to_display', "Select feature ", choices=[]),
-                                    output_widget("Adaptation_plotly"),
-                                    ui.output_table("Adaptation_table"),
+                                    ui.layout_column_wrap(
+                                        ui.input_select('Adaptation_feature_to_display', "Select feature ", choices=[]),
+                                        
+                                        
+                                        ),
+                                    
+                                    ui.layout_column_wrap(ui.card(
+                                        ui.card_header("Detailed Adaptation fit"),
+                                        ui.input_action_button("trigger_adaptation_plot_saving", "📊 Save adaptation plot"),
+                                        output_widget("Adaptation_plotly"),
+                                        full_screen=True,
+                                    ),
+                                    ui.card(
+                                        ui.card_header("Adaptation table"),
+                                        ui.input_action_button("trigger_adaptation_table_saving", "💾 Save Adaptation table"),
+                                        ui.output_data_frame("Adaptation_table"),
+                                        full_screen=True,
+                                    )
+                                    ),
+                                    
+                                    
+                                    
                                 ),
                             ),
                         #),
@@ -406,7 +662,7 @@ app_ui = ui.page_fluid(
                             width=2
                         ),
                        # ui.panel_main(
-                            ui.navset_pill(
+                            ui.navset_card_pill(
                                 ui.nav_panel(
                                     "Spike feature correlation",
                                     output_widget("Spike_features_index_correlation"),
@@ -419,6 +675,7 @@ app_ui = ui.page_fluid(
             ),
         ),
     ),
+    fill=True
 )
 
 def import_json_config_file(json_config_file):
@@ -487,100 +744,7 @@ def get_color_gradient(c1, c2, n):
     rgb_colors = [((1-mix)*c1_rgb + (mix*c2_rgb)) for mix in mix_pcts]
     return ["#" + "".join([format(int(round(val*255)), "02x") for val in item]) for item in rgb_colors]
 
-# def get_firing_analysis_tables(cells,response_type,output_duration):
-    
 
-#     Full_SF_table = cells[2]
-#     Sweep_info_table = cells[4]
-#     sweep_QC_table = cells[5]
-#     cell_fit_table = cells[6]
-#     cell_feature_table = cells[7]
-    
-#     response_type=response_type.replace(' ','_')
-    
-#     sub_cell_fit_table = cell_fit_table.loc[cell_fit_table['Response_type'] == response_type,:]
-#     sub_cell_feature_table = cell_feature_table.loc[cell_feature_table['Response_type'] == response_type,:]
-
-    
-    
-    
-#     if response_type == 'Time_based':
-#         response = str(str(int(output_duration*1e3))+'ms')
-#     else:
-        
-#         response = str(response_type.replace('_based',' ') + str(int(output_duration)))
-    
-#     current_stim_freq_table = fir_an.get_stim_freq_table(
-#         Full_SF_table.copy(), Sweep_info_table.copy(),sweep_QC_table.copy(), output_duration,response_type)
-#     current_stim_freq_table['Response'] = response
-    
-#     model = sub_cell_fit_table.loc[sub_cell_fit_table['Output_Duration'] == output_duration,'I_O_obs'].values[0]
-#     if model == 'Hill' or model == 'Hill-Sigmoid':
-#         min_stim = np.nanmin(current_stim_freq_table.loc[:,'Stim_amp_pA'])
-#         max_stim = np.nanmax(current_stim_freq_table.loc[:,'Stim_amp_pA'])
-#         stim_array = np.arange(min_stim,max_stim,.1)
-#         Hill_Half_cst = sub_cell_fit_table.loc[cell_fit_table['Output_Duration'] == output_duration,'Hill_Half_cst'].values[0]
-#         Hill_amplitude = sub_cell_fit_table.loc[cell_fit_table['Output_Duration'] == output_duration,'Hill_amplitude'].values[0]
-#         Hill_coef = sub_cell_fit_table.loc[cell_fit_table['Output_Duration'] == output_duration,'Hill_coef'].values[0]
-#         Hill_x0 = sub_cell_fit_table.loc[cell_fit_table['Output_Duration'] == output_duration,'Hill_x0'].values[0]
-#         freq_array = fir_an.hill_function(stim_array, Hill_x0, Hill_coef, Hill_Half_cst)
-#         freq_array *= Hill_amplitude
-        
-#         if model == 'Hill-Sigmoid':
-#             sigmoid_sigma = sub_cell_fit_table.loc[cell_fit_table['Output_Duration'] == output_duration,'Sigmoid_sigma'].values[0]
-#             sigmoid_x0 = sub_cell_fit_table.loc[cell_fit_table['Output_Duration'] == output_duration,'Sigmoid_x0'].values[0]
-            
-#             freq_array *= fir_an.sigmoid_function(stim_array , sigmoid_x0, sigmoid_sigma)
-        
-#         model_table = pd.DataFrame({'Stim_amp_pA' : stim_array,
-#                                     "Frequency_Hz" : freq_array})
-#         model_table['Response'] = response
-#         Gain = sub_cell_feature_table.loc[sub_cell_feature_table['Output_Duration'] == output_duration,'Gain'].values[0]
-#         Threshold = sub_cell_feature_table.loc[sub_cell_feature_table['Output_Duration'] == output_duration,'Threshold'].values[0]
-#         Intercept = -Gain*Threshold
-#         IO_freq = stim_array*Gain+Intercept
-        
-#         IO_table = pd.DataFrame({'Stim_amp_pA' : stim_array,
-#                                     "Frequency_Hz" : IO_freq})
-#         IO_table['Response'] = response
-#         IO_table=IO_table.loc[IO_table['Frequency_Hz']>=-10.,:]
-        
-#         if not np.isnan(sub_cell_feature_table.loc[sub_cell_feature_table['Output_Duration'] == output_duration,'Saturation_Stimulus'].values[0]):
-#             Saturation_stimulus =sub_cell_feature_table.loc[sub_cell_feature_table['Output_Duration'] == output_duration,'Saturation_Stimulus'].values[0]
-#             Saturation_freq =sub_cell_feature_table.loc[sub_cell_feature_table['Output_Duration'] == output_duration,'Saturation_Frequency'].values[0]
-#             Saturation_table = pd.DataFrame({'Stim_amp_pA' : Saturation_stimulus,
-#                                         "Frequency_Hz" : Saturation_freq,
-#                                         'Response' : response})
-            
-#         else:
-#             Saturation_table = pd.DataFrame()
-    
-        
-#         current_stim_freq_table=1
-#         model_table=1
-#         IO_table=1
-#         Saturation_table=1
-#         print("Response_type=",response_type)
-#         print(current_stim_freq_table,model_table,IO_table,Saturation_table)
-#         return current_stim_freq_table, model_table, IO_table, Saturation_table
-    
-def get_BE_value_and_table(cell_dict, sweep_id):
-    """
-    Get Brdige error values for all sweeps, and respective conditions
-
-    """
-    
-    Full_TVC_table = cell_dict['Full_TVC_table']
-    sweep_info_table = cell_dict['Sweep_info_table']
-    if np.isnan(sweep_info_table.loc[sweep_info_table['Sweep']==sweep_id,"Bridge_Error_GOhms"].values[0]) == False:
-        TVC_table = Full_TVC_table.loc[sweep_id,"TVC"]
-        stim_amp = sweep_info_table.loc[sweep_info_table['Sweep']==sweep_id,"Stim_SS_pA"].values[0]
-        Stim_start_s = sweep_info_table.loc[sweep_info_table['Sweep']==sweep_id,"Stim_start_s"].values[0]
-        Stim_end_s = sweep_info_table.loc[sweep_info_table['Sweep']==sweep_id,"Stim_end_s"].values[0]
-        BE_val, condition_table = sw_an.estimate_bridge_error(TVC_table, stim_amp, Stim_start_s, Stim_end_s,do_plot=False)
-        
-        return BE_val, condition_table
-        
     
 def get_firing_analysis(cell_dict,response_type):
     """
@@ -710,97 +874,797 @@ def get_firing_analysis(cell_dict,response_type):
             template="plotly_white")
 
         return IO_figure
+    
+def get_regression_plot(feature_table, feature ,firing_response_type, unit_dict):
+    
+    #cell_feature_table  = cell_dict['Cell_feature_table']
+    #gain_table = cell_feature_table.loc[cell_feature_table['Response_type'] == input.Firing_response_type(),:]
+    
+    sub_feature_table = feature_table.dropna(subset=[feature])
+    current_unit = unit_dict[feature]
+    if sub_feature_table.shape[0]>1:
+        slope, intercept = fir_an.linear_fit(np.array(sub_feature_table.loc[:,'Output_Duration']),
+                                             np.array(sub_feature_table.loc[:,feature]))
+        
+        linear_fit_y = slope * np.array(sub_feature_table.loc[:,'Output_Duration']) + intercept
+        r2 = r2_score(sub_feature_table.loc[:,feature], linear_fit_y)
+        
+        table = pd.DataFrame([slope, intercept, r2]).T
+        table.columns = ['Slope', 'Intercept', 'R2']
+        table = table.T
+        table = table.reset_index(drop=False)
+        table.columns = [" feature", "Value"]
+        table.loc[:,"Value"] = np.round(table.loc[:,"Value"], 2)
+        
+        if firing_response_type == 'Time_based':
+            extended_x_data = np.arange(0,np.nanmax(np.array(feature_table.loc[:,'Output_Duration'])),.001)
+            x_legend = "Response duration ms"
+        else:
+            extended_x_data = np.arange(0,np.nanmax(np.array(feature_table.loc[:,'Output_Duration'])),.1)
+            if firing_response_type == "Index_based":
+                x_legend = "Response duration spike index"
+            else:
+                x_legend = "Response duration spike interval"
+        original_data_x = np.array(feature_table['Output_Duration'])  # X values from your original data
+        original_data_y = np.array(feature_table[feature])             # Y values from your original data
 
-# def get_feature_regression_plot_tables(cell_dict,response_type,feature):
+        linear_fit_y = slope * extended_x_data + intercept
+
+        # Create the plot
+        fig = go.Figure()
+        
+        # Add original data points
+        fig.add_trace(go.Scatter(
+            x=original_data_x,
+            y=original_data_y,
+            mode='markers',
+            marker=dict(symbol='circle', color='black'),
+            name='Original Data'
+        ))
+        
+        # Add the linear fit line
+        fig.add_trace(go.Scatter(
+            x=extended_x_data,  # Use the same x-values
+            y=linear_fit_y,     # Linear fit y-values
+            mode='lines',
+            line=dict(color='red', dash='dash'),  # Dashed red line for linear fit
+            name='Linear Fit'
+        ))
+        
+        # Update the layout
+        fig.update_layout(
+            title=f'{feature} Linear Fit',
+            xaxis_title=x_legend,
+            yaxis_title=f'{feature} {current_unit}',
+            width=400,
+            height=400,
+            showlegend=False
+        )
+        
+    
+        return fig, table
+    
+    else:
+        empty_fig = go.Figure()
+        empty_fig.add_annotation(
+            text=f"Not enough {feature} values to make regression",
+            x=0.5, y=0.5, xref="paper", yref="paper",
+            showarrow=False, font=dict(color="red", size=16)
+        )
+        table = pd.DataFrame(columns = [feature, 'Not enough values'])
+        return empty_fig, table
+        
+def get_sweep_spike_plot_table(cell_dict, current_sweep, BE_correction,superimpose_BE_correction, color_dict):
+    
+    Full_TVC_table = cell_dict['Full_TVC_table']
+    Full_SF_table = cell_dict['Full_SF_table']
+    Sweep_info_table = cell_dict["Sweep_info_table"]
+    #current_sweep = input.Sweep_selected()
+    BE = Sweep_info_table.loc[Sweep_info_table['Sweep'] == current_sweep,'Bridge_Error_GOhms'].values[0]
     
     
-#     cell_feature_table = cell_dict['Cell_feature_table']
-
-
-#     response_type=response_type.replace(' ','_')
+    current_TVC_table = ordifunc.get_filtered_TVC_table(Full_TVC_table,current_sweep)
     
-#     sub_cell_feature_table = cell_feature_table.loc[cell_feature_table['Response_type'] == response_type,[feature,'Output_Duration']]
-#     sub_cell_feature_table = sub_cell_feature_table.dropna(subset=[feature,'Output_Duration'])
-#     response_type_legend_dict = {'Time_based':'ms',
-#                                  'Index_based':'Spike Index',
-#                                  'Interval_based':'Spike Interval'}
+    if BE_correction==True: #if asked, correct the potential trace by the bridge error
+        Full_SF_dict_table = cell_dict['Full_SF_dict_table']
+        Full_SF_table = sp_an.create_Full_SF_table(Full_TVC_table, 
+                                                   Full_SF_dict_table, 
+                                                   cell_sweep_info_table = Sweep_info_table,
+                                                   BE_correct=True,)
+    else:
+        Full_SF_dict_table = cell_dict['Full_SF_dict_table']
+        Full_SF_table = sp_an.create_Full_SF_table(Full_TVC_table, 
+                                                   Full_SF_dict_table, 
+                                                   cell_sweep_info_table = Sweep_info_table,
+                                                   BE_correct=False,)
     
-   
+    fig = make_subplots(rows=2, cols=1, 
+                        shared_xaxes=True, 
+                        subplot_titles=("Membrane Potential plot", "Input Current plot"),
+                        vertical_spacing=0.1)
+    
+    if BE_correction == True:
+        if not np.isnan(BE):
+            current_TVC_table.loc[:,'Membrane_potential_mV'] = current_TVC_table.loc[:,'Membrane_potential_mV']-BE*current_TVC_table.loc[:,'Input_current_pA']
         
-#     if sub_cell_feature_table.shape[0]>=2:
-
-#         a,b = fir_an.linear_fit(np.array(sub_cell_feature_table.loc[:,'Output_Duration']),np.array(sub_cell_feature_table.loc[:,feature]))
-
-#         xgrid = np.linspace(start=np.nanmin(sub_cell_feature_table.loc[:,'Output_Duration']), stop=np.nanmax(sub_cell_feature_table.loc[:,'Output_Duration']), num=30)
-#         ygrid_extended = b + a * xgrid
+        fig.add_trace(go.Scatter(x=current_TVC_table['Time_s'], 
+                                 y=current_TVC_table['Membrane_potential_mV'], 
+                                 mode='lines', 
+                                 name='Membrane potential BE Corrected', 
+                                 line=dict(color=color_dict['Membrane potential'], width =1 )), row=1, col=1)
         
-        
-        
-#         figure = go.FigureWidget(
-#             data=[
-#                 go.Scattergl(
-#                     x=np.array(sub_cell_feature_table.loc[:,'Output_Duration']),
-#                     y=np.array(sub_cell_feature_table.loc[:,feature]),
-#                     mode="markers",
-#                     marker=dict(color="rgba(0, 0, 0, 1)", size=5),
-#                     ),
-#                 go.Scattergl(
-#                     x=xgrid,
-#                     y=ygrid_extended,
-#                     mode="lines",
-#                     line=dict(color="red", width=2),
-#                     ),
-#                 ],
-#             layout={"showlegend": False},
-#             )
-        
-#         ygrid_original = b + a * np.array(sub_cell_feature_table.loc[:,feature])
-        
-#         r2 = r2_score(np.array(sub_cell_feature_table.loc[:,feature]), ygrid_original)
-        
-        
-#         table = pd.DataFrame([np.nanmax(np.array(sub_cell_feature_table.loc[:,feature])),
-#                               np.nanmin(np.array(sub_cell_feature_table.loc[:,feature])),
-#                               a,
-#                               b,
-#                               r2])
-#         table=pd.concat([pd.DataFrame(['Maximum','Minimum','Slope','Intercept','R2']),table], axis=1)
+        if superimpose_BE_correction == True:
+            current_TVC_table_second = ordifunc.get_filtered_TVC_table(Full_TVC_table,current_sweep)
+            fig.add_trace(go.Scatter(x=current_TVC_table_second['Time_s'], 
+                                     y=current_TVC_table_second['Membrane_potential_mV'], 
+                                     mode='lines', 
+                                     name='Membrane potential original', 
+                                     line=dict(color=color_dict['Membrane potential original'])), row=1, col=1)
     
     
-        
-        
-#     else:
-#         figure = go.FigureWidget(
-#             data=[
-#                 go.Scattergl(
-#                     x=np.array(sub_cell_feature_table.loc[:,'Output_Duration']),
-#                     y=np.array(sub_cell_feature_table.loc[:,feature]),
-#                     mode="markers",
-#                     marker=dict(color="rgba(0, 0, 0, 1)", size=5),
-#                     ),
-#                 ],
-#             layout={"showlegend": False},
-#             )
-        
-#         if sub_cell_feature_table.shape[0]>0:
-#             table = pd.DataFrame([np.nanmax(np.array(sub_cell_feature_table.loc[:,feature])),
-#                                   np.nanmin(np.array(sub_cell_feature_table.loc[:,feature]))])
-#         else:
-#             table=pd.DataFrame([np.nan,np.nan])
-#         table=pd.concat([pd.DataFrame(['Maximum','Minimum']),table], axis=1)
+    else: 
+        fig.add_trace(go.Scatter(x=current_TVC_table['Time_s'], 
+                                 y=current_TVC_table['Membrane_potential_mV'], 
+                                 mode='lines', 
+                                 name='Membrane potential ', 
+                                 line=dict(color=color_dict['Membrane potential'], 
+                                           width =1)), row=1, col=1)
     
-#     figure.update_layout(
-#         autosize=False,
-#         width=300,
-#         height=400,
-#         xaxis_title=response_type_legend_dict[response_type], 
-#         yaxis_title=feature)
     
-#     return figure,table
+    current_sweep_SF_table = Full_SF_table.loc[current_sweep, "SF"]
+
+    if not current_sweep_SF_table.empty:
+        for feature in current_sweep_SF_table['Feature'].unique():
+            if feature in ["Spike_heigth", "Spike_width_at_half_heigth"]:
+                continue
+            subset = current_sweep_SF_table[current_sweep_SF_table['Feature'] == feature]
+            
+            fig.add_trace(go.Scatter(x=subset['Time_s'], 
+                                     y=subset['Membrane_potential_mV'], 
+                                     mode='markers', 
+                                     name=feature, 
+                                     marker=dict(color=color_dict[feature])), row=1, col=1)
+    
+    # Plot for Input_current_pA vs Time_s from TVC
+    fig.add_trace(go.Scatter(x=current_TVC_table['Time_s'], 
+                             y=current_TVC_table['Input_current_pA'], 
+                             mode='lines', name='Input current', 
+                             line=dict(color=color_dict['Input_current_pA'] , 
+                                       width =1)), row=2, col=1)
+    
+    # Update layout
+    
+    fig.update_layout(
+    height=800,
+    showlegend=True,
+    title_text="TVC and SF Plots",
+    hovermode='x unified',  # Use 'x unified' to create a unified hover mode
+    )
+    fig.update_xaxes(title_text="Time_s", row=2, col=1)
+    fig.update_yaxes(title_text="Membrane_potential_mV", row=1, col=1)
+    fig.update_yaxes(title_text="Input_current_pA", row=2, col=1)
+
+    for col in current_sweep_SF_table.columns:
+        if col == "Time_s":
+            continue
+        if np.issubdtype(current_sweep_SF_table[col].dtype, np.floating):
+            # Default rounding to 2 decimals
+            current_sweep_SF_table[col] = np.round(current_sweep_SF_table[col], 2)
+    
+    
+    current_sweep_SF_table.loc[current_sweep_SF_table['Feature'] != 'Spike_width_at_half_heigth','Time_s'] = np.round(current_sweep_SF_table.loc[current_sweep_SF_table['Feature'] != 'Spike_width_at_half_heigth','Time_s'] , 2)
+            
+    current_sweep_SF_table = current_sweep_SF_table.loc[:,['Feature', 
+                                      "Spike_index", 
+                                      "Time_s", 
+                                      'Membrane_potential_mV', 
+                                      "Input_current_pA", 
+                                      "Potential_first_time_derivative_mV/s",
+                                      "Potential_second_time_derivative_mV/s/s"]]
+    current_sweep_SF_table = current_sweep_SF_table.sort_values(['Spike_index'])
+    
+    return fig, current_sweep_SF_table, current_TVC_table
+
+def get_current_sweep_BE_analysis(cell_dict, current_sweep):
+    
+
+    Full_TVC_table = cell_dict['Full_TVC_table']
+    sweep_info_table = cell_dict['Sweep_info_table']
+    
+    
+    if np.isnan(sweep_info_table.loc[sweep_info_table['Sweep'] == current_sweep,"Bridge_Error_GOhms"].values[0]) == False:
+        TVC_table = Full_TVC_table.loc[current_sweep,"TVC"]
+        
+        stim_amp = sweep_info_table.loc[sweep_info_table['Sweep'] == current_sweep,"Stim_SS_pA"].values[0]
+        Stim_start_s = sweep_info_table.loc[sweep_info_table['Sweep'] == current_sweep,"Stim_start_s"].values[0]
+        Stim_end_s = sweep_info_table.loc[sweep_info_table['Sweep'] == current_sweep,"Stim_end_s"].values[0]
+        dict_plot = sw_an.estimate_bridge_error(TVC_table, stim_amp, Stim_start_s, Stim_end_s,do_plot=True)
+        BE_val, condition_table = sw_an.estimate_bridge_error(TVC_table, stim_amp, Stim_start_s, Stim_end_s,do_plot=False)
+        
+        
+        actual_transition_time = dict_plot["Transition_time"]
+
+
+        style_dict = {}
+
+        # --- Default style ---
+        default_style = {
+            "figsize": (1400, 1200),
+            "font_size": 12,
+            "title_fontsize": 14,
+            "legend_fontsize": 12,
+            "col_width_ratios": [0.5, 0.5],
+            "x_lim_zoom": (actual_transition_time - 0.010, actual_transition_time + 0.010),
+            "xlim_right": (actual_transition_time - 0.010, actual_transition_time + 0.010),
+            # Okabe–Ito palette (color-blind safe)
+            "colors": {
+                "black": "#000000",
+                "orange": "#E69F00",
+                "skyblue": "#56B4E9",
+                "bluish_green": "#009E73",
+                "yellow": "#F0E442",
+                "blue": "#0072B2",
+                "vermillion": "#D55E00",
+                "reddish_purple": "#CC79A7",
+            },
+        }
+
+        style = {**default_style, **style_dict}
+        c = style["colors"]
+
+        # --- Extract data ---
+        TVC_table = dict_plot["TVC_table"]
+        min_time_current = dict_plot["min_time_current"]
+        max_time_current = dict_plot["max_time_current"]
+
+        alpha_FT = dict_plot["alpha_FT"]
+        T_FT = dict_plot["T_FT"]
+        delta_t_ref_first_positive = dict_plot["delta_t_ref_first_positive"]
+        T_ref_cell = dict_plot["T_ref_cell"]
+
+        V_fit_table = dict_plot["Membrane_potential_mV"]["V_fit_table"]
+        V_table_to_fit = dict_plot["Membrane_potential_mV"]["V_table_to_fit"]
+        V_pre_transition_time = dict_plot["Membrane_potential_mV"]["Voltage_Pre_transition"]
+        V_post_transition_time = dict_plot["Membrane_potential_mV"]["Voltage_Post_transition"]
+
+        pre_T_current = dict_plot["Input_current_pA"]["pre_T_current"]
+        post_T_current = dict_plot["Input_current_pA"]["post_T_current"]
+        current_trace_table = dict_plot["Input_current_pA"]["current_trace_table"]
+
+        row_titles = [
+            "Membrane potential",
+            "Input current",
+            "1st derivative of V",
+            "2nd derivative of V",
+            "Derivative of input current",
+        ]
+        y_labels = ["mV", "pA", "mV/ms", "mV/ms²", "pA/ms"]
+
+        # --- Layout ---
+        fig = make_subplots(
+            rows=5, cols=2,
+            shared_xaxes=True,
+            column_widths=style["col_width_ratios"],
+            subplot_titles=[t + (" (full)" if i % 2 == 0 else " (zoom)") for t in row_titles for i in range(2)],
+            vertical_spacing=0.06,
+            horizontal_spacing=0.08
+        )
+
+        # Helper to add shaded zoom region on left panels
+        def add_zoom_rectangle(fig, row, col):
+            xmin, xmax = style["x_lim_zoom"]
+            fig.add_vrect(
+                x0=xmin, x1=xmax,
+                fillcolor=c["blue"], opacity=0.1, line_width=0,
+                row=row, col=col
+            )
+
+        # --- Plot functions ---
+        def plot_membrane(row, col, zoom=False):
+            fig.add_trace(go.Scatter(
+                x=TVC_table["Time_s"], y=TVC_table["Membrane_potential_mV"],
+                mode="lines", line=dict(color=c["black"], width=1),
+                name="Membrane potential", legendgroup="Membrane"
+            ), row=row, col=col)
+            if zoom:
+                fig.add_trace(go.Scatter(
+                    x=TVC_table["Time_s"], y=TVC_table["Membrane_potential_0_5_LPF"],
+                    mode="lines", line=dict(color=c["bluish_green"], width=2.5),
+                    name="0.5 Hz LPF", legendgroup="Membrane"
+                ), row=row, col=col)
+                fig.add_trace(go.Scatter(
+                    x=[actual_transition_time], y=[V_pre_transition_time],
+                    mode="markers", marker=dict(color=c["orange"], size=8),
+                    name="Pre-transition V", legendgroup="Membrane"
+                ), row=row, col=col)
+                fig.add_trace(go.Scatter(
+                    x=[actual_transition_time], y=[V_post_transition_time],
+                    mode="markers", marker=dict(color=c["vermillion"], size=8),
+                    name="Post-transition V", legendgroup="Membrane"
+                ), row=row, col=col)
+                fig.add_trace(go.Scatter(
+                    x=V_fit_table["Time_s"], y=V_fit_table["Membrane_potential_mV"],
+                    mode="lines", line=dict(color=c["blue"], width=2.5),
+                    name="Post-fit", legendgroup="Membrane"
+                ), row=row, col=col)
+
+        def plot_current(row, col, zoom=False):
+            fig.add_trace(go.Scatter(
+                x=TVC_table["Time_s"], y=TVC_table["Input_current_pA"],
+                mode="lines", line=dict(color=c["black"], width=1),
+                name="Input current", legendgroup="Current"
+            ), row=row, col=col)
+            if zoom:
+                mask_pre = (current_trace_table["Time_s"] <= (min_time_current + 0.005)) & \
+                           (current_trace_table["Time_s"] >= min_time_current)
+                mask_post = (current_trace_table["Time_s"] <= max_time_current) & \
+                            (current_trace_table["Time_s"] >= (max_time_current - 0.005))
+                fig.add_trace(go.Scatter(
+                    x=current_trace_table.loc[mask_pre, "Time_s"],
+                    y=[pre_T_current] * mask_pre.sum(),
+                    mode="lines", line=dict(color=c["vermillion"], width=2),
+                    name="Pre-transition median", legendgroup="Current"
+                ), row=row, col=col)
+                fig.add_trace(go.Scatter(
+                    x=current_trace_table.loc[mask_post, "Time_s"],
+                    y=[post_T_current] * mask_post.sum(),
+                    mode="lines", line=dict(color=c["blue"], width=2),
+                    name="Post-transition median", legendgroup="Current"
+                ), row=row, col=col)
+
+        def plot_vdot(row, col, zoom=False):
+            fig.add_trace(go.Scatter(
+                x=TVC_table["Time_s"], y=TVC_table["V_dot_one_kHz"],
+                mode="lines", line=dict(color=c["black"], width=1),
+                name="dV/dt", legendgroup="Vdot"
+            ), row=row, col=col)
+            if zoom:
+                T_start_fit = np.nanmin(V_table_to_fit["Time_s"])
+                for x, color, name in [(T_ref_cell, c["vermillion"], "T_ref"),
+                                       (T_start_fit, c["yellow"], "Fit start")]:
+                    fig.add_vline(
+                        x=x, line=dict(color=color, dash="dash"),
+                        row=row, col=col
+                    )
+
+        def plot_vddot(row, col, zoom=False):
+            fig.add_trace(go.Scatter(
+                x=TVC_table["Time_s"], y=TVC_table["V_double_dot_five_kHz"],
+                mode="lines", line=dict(color=c["black"], width=1),
+                name="d2V/dt2", legendgroup="Vddot"
+            ), row=row, col=col)
+            if zoom:
+                Fast_ring_time = TVC_table.loc[
+                    (TVC_table["Time_s"] <= (actual_transition_time + 0.005)) &
+                    (TVC_table["Time_s"] >= actual_transition_time), "Time_s"
+                ]
+                fig.add_trace(go.Scatter(
+                    x=[Fast_ring_time.min(), Fast_ring_time.max()],
+                    y=[alpha_FT, alpha_FT],
+                    mode="lines", line=dict(color=c["reddish_purple"], dash="dash"),
+                    name="± α FT", legendgroup="Vddot"
+                ), row=row, col=col)
+                fig.add_trace(go.Scatter(
+                    x=[Fast_ring_time.min(), Fast_ring_time.max()],
+                    y=[-alpha_FT, -alpha_FT],
+                    mode="lines", line=dict(color=c["reddish_purple"], dash="dash"),
+                    showlegend=False, legendgroup="Vddot"
+                ), row=row, col=col)
+                
+                
+                if not np.isnan(T_FT):
+                    fig.add_trace(
+                                go.Scatter(
+                                    x=[T_FT, T_FT],
+                                    y=[-alpha_FT, alpha_FT],  # set according to the subplot y-range
+                                    mode="lines",
+                                    line=dict(color=c["vermillion"]),
+                                    name="T_FT",
+                                    legendgroup="Vddot"
+                                ),
+                                row=row,
+                                col=col
+                            )
+
+
+        def plot_idot(row, col, zoom=False):
+            fig.add_trace(go.Scatter(
+                x=TVC_table["Time_s"], y=TVC_table["I_dot_five_kHz"],
+                mode="lines", line=dict(color=c["black"], width=1),
+                name="dI/dt", legendgroup="Idot"
+            ), row=row, col=col)
+            if zoom:
+                fig.add_vline(x=actual_transition_time, line=dict(color=c["blue"], dash="dash"),
+                              row=row, col=col)
+
+        # --- Combine all 5 rows × 2 columns ---
+        #funcs = [plot_membrane, plot_current, plot_vdot, plot_vddot, plot_idot]
+        funcs = [plot_membrane, plot_current, plot_vdot, plot_vddot, plot_idot]
+
+        for i, func in enumerate(funcs, start=1):
+            func(i, 1, zoom=False)
+            add_zoom_rectangle(fig, i, 1)
+            func(i, 2, zoom=True)
+            fig.update_xaxes(range=style["xlim_right"], row=i, col=2)
+            fig.update_yaxes(title_text=y_labels[i-1], row=i, col=1)
+
+        # --- Global layout ---
+        fig.update_layout(
+            height=1200, width=1400,
+            template="simple_white",
+            font=dict(size=style["font_size"]),
+            legend=dict(
+                orientation="v",
+                x=1.05, y=1,
+                font=dict(size=style["legend_fontsize"])
+            ),
+            margin=dict(l=60, r=200, t=80, b=60),
+        )
+
+        
+        
+        #fig.show()
+        
+        BE_fit_values_dict={"Bridge Error (GΩ)" : np.round(BE_val,4),
+                            "Transition time" : np.round(actual_transition_time,4),
+                            "⍺ FT" : np.round(alpha_FT, 4), 
+                            "T_FT" : np.round(T_FT, 4),
+                            "Δ t_ref_first_positive" : np.round(delta_t_ref_first_positive,4),
+                            "T_ref_cell" : np.round(T_ref_cell,4),
+                            "Pre_T_current" : np.round(pre_T_current,4),
+                            "Post_T_current" : np.round(post_T_current, 4),}
+                            # "first sign change" : np.round(first_sign_change,4),
+                            # "T_start_fit" : np.round(T_start_fit, 4)}
+        
+        BE_fit_values_table = pd.DataFrame(list(BE_fit_values_dict.items()), 
+                                           columns=["Parameter", "Value"])
+
+        
+        
+        return fig, BE_val, condition_table, BE_fit_values_table
+    
+def get_current_sweep_BE_analysis_old(cell_dict, current_sweep):
+    
+
+    Full_TVC_table = cell_dict['Full_TVC_table']
+    sweep_info_table = cell_dict['Sweep_info_table']
+    
+    
+    if np.isnan(sweep_info_table.loc[sweep_info_table['Sweep'] == current_sweep,"Bridge_Error_GOhms"].values[0]) == False:
+        TVC_table = Full_TVC_table.loc[current_sweep,"TVC"]
+        
+        stim_amp = sweep_info_table.loc[sweep_info_table['Sweep'] == current_sweep,"Stim_SS_pA"].values[0]
+        Stim_start_s = sweep_info_table.loc[sweep_info_table['Sweep'] == current_sweep,"Stim_start_s"].values[0]
+        Stim_end_s = sweep_info_table.loc[sweep_info_table['Sweep'] == current_sweep,"Stim_end_s"].values[0]
+        dict_plot = sw_an.estimate_bridge_error(TVC_table, stim_amp, Stim_start_s, Stim_end_s,do_plot=True)
+        BE_val, condition_table = sw_an.estimate_bridge_error(TVC_table, stim_amp, Stim_start_s, Stim_end_s,do_plot=False)
+        
+        
+        TVC_table = dict_plot['TVC_table']
+        #min_time_fit
+        min_time_current = dict_plot['min_time_current']
+        max_time_current = dict_plot['max_time_current']
+            # Transition_time
+        actual_transition_time = dict_plot["Transition_time"]
+        alpha_FT = dict_plot['alpha_FT']
+        T_FT = dict_plot['T_FT']
+        delta_t_ref_first_positive = dict_plot["delta_t_ref_first_positive"]
+        T_ref_cell = dict_plot['T_ref_cell']
+        
+        
+        # Membrane_potential_mV
+        V_fit_table = dict_plot["Membrane_potential_mV"]["V_fit_table"]
+        V_table_to_fit = dict_plot['Membrane_potential_mV']['V_table_to_fit']
+        V_pre_transition_time = dict_plot["Membrane_potential_mV"]["Voltage_Pre_transition"]
+        V_post_transition_time = dict_plot["Membrane_potential_mV"]["Voltage_Post_transition"]
+        
+        # Input_current_pA
+        pre_T_current = dict_plot["Input_current_pA"]["pre_T_current"]
+        post_T_current = dict_plot["Input_current_pA"]["post_T_current"]
+        current_trace_table = dict_plot["Input_current_pA"]["current_trace_table"]
+        
+        # Create subplots
+        fig = make_subplots(rows=5, cols=1,  shared_xaxes=True, subplot_titles=("Membrane Potential plot", "Input Current plot", "Membrane potential first derivative 1kHz LPF","Membrane potential second derivative 5kHz LPF","Input current derivative 5kHz LPF"), vertical_spacing=0.03)
+        
+        # Membrane potential plot
+        fig.add_trace(go.Scatter(x=TVC_table['Time_s'], y=TVC_table['Membrane_potential_mV'], mode='lines', name='Cell_trace', line=dict(color='black', width =1 )), row=1, col=1)
+        fig.add_trace(go.Scatter(x=TVC_table['Time_s'], y=TVC_table['Membrane_potential_0_5_LPF'], mode='lines', name="Membrane_potential_0_5_LPF", line=dict(color='#680396')), row=1, col=1)
+        fig.add_trace(go.Scatter(x=[actual_transition_time], y=[V_pre_transition_time], mode='markers', name='Voltage_Pre_transition', marker=dict(color='#fa2df0', size=8)), row=1, col=1)
+        fig.add_trace(go.Scatter(x=[actual_transition_time], y=[V_post_transition_time], mode='markers', name='Voltage_Post_transition', marker=dict(color='#9e2102', size=8)), row=1, col=1)
+        fig.add_trace(go.Scatter(x=V_table_to_fit['Time_s'], y=V_table_to_fit['Membrane_potential_mV'], mode='lines', line=dict(color='#c96a04'), name='Fitted membrane potential'), row=1, col=1)
+        fig.add_trace(go.Scatter(x=V_fit_table['Time_s'], y=V_fit_table['Membrane_potential_mV'], mode='lines', line=dict(color='orange'), name='Post_transition_voltage_fit'), row=1, col=1)
+        
+        
+        
+        # Input current plot
+        fig.add_trace(go.Scatter(x=TVC_table['Time_s'], y=TVC_table['Input_current_pA'], mode='lines', name='Input_current_trace', line=dict(color='black', width =1 )), row=2, col=1)
+        
+        fig.add_trace(go.Scatter(
+            x=np.array(current_trace_table.loc[(current_trace_table["Time_s"]<=(min_time_current+0.005))&(current_trace_table["Time_s"]>=(min_time_current)),"Time_s"]), 
+            y=[pre_T_current]*len(np.array(current_trace_table.loc[(current_trace_table["Time_s"]<=(min_time_current+0.005))&(current_trace_table["Time_s"]>=(min_time_current)),"Time_s"])), 
+            mode='lines', name="Pre transition fit Median", line=dict(color="red")), row=2, col=1)
+        fig.add_trace(go.Scatter(
+            x=np.array(current_trace_table.loc[(current_trace_table["Time_s"]<=(max_time_current))&(current_trace_table["Time_s"]>=(max_time_current-0.005)),"Time_s"]), 
+            y=[post_T_current]*len(np.array(current_trace_table.loc[(current_trace_table["Time_s"]<=(max_time_current))&(current_trace_table["Time_s"]>=(max_time_current-0.005)),"Time_s"])), 
+            mode='lines', name="Post transition fit Median", line=dict(color='blue')), row=2, col=1)
+        fig.add_trace(go.Scatter(x=[actual_transition_time], y=[pre_T_current], mode='markers', name='pre_Transition_current', marker=dict(color='red', size = 8)), row=2, col=1)
+        fig.add_trace(go.Scatter(x=[actual_transition_time], y=[post_T_current], mode='markers', name='post_Transition_current', marker=dict(color='blue', size=8)), row=2, col=1)
+        
+        # V_dot_one_kHz
+        first_sign_change = delta_t_ref_first_positive+T_ref_cell
+        min_V_dot = np.nanmin(TVC_table['V_dot_one_kHz'])
+        max_V_dot = np.nanmax(TVC_table['V_dot_one_kHz'])
+
+        fig.add_trace(go.Scatter(x=TVC_table['Time_s'], y=TVC_table['V_dot_one_kHz'], mode='lines', name='V_dot_one_kHz', line=dict(color='black', width = 1)), row=3, col=1)
+        fig.add_trace(go.Scatter(x=[first_sign_change]*len(np.arange(min_V_dot,max_V_dot,1)), y=np.arange(min_V_dot,max_V_dot,1),
+                                 mode='lines', name=f'first_sign_change = {round(first_sign_change,4)}s <br> delta_t_ref_first_positive = {round(delta_t_ref_first_positive,4)}s ', line=dict(color='blueviolet', dash='dash')), row=3, col=1)
+        # Add dashed vertical line at time = T_star
+        fig.add_trace(go.Scatter(x=[T_ref_cell]*len(np.arange(min_V_dot,max_V_dot,1)), y=np.arange(min_V_dot,max_V_dot,1),
+                                 mode='lines', name=f'T_ref_cell = {round(T_ref_cell,4)}s', line=dict(color='red', dash='dash')), row=3, col=1)
+        T_start_fit = np.nanmin(V_table_to_fit['Time_s'])
+        fig.add_trace(go.Scatter(x=[T_start_fit]*len(np.arange(min_V_dot,max_V_dot,1)), y=np.arange(min_V_dot,max_V_dot,1),
+                                 mode='lines', name=f'T_start_fit = {round(T_start_fit,4)}s', line=dict(color='#c96a04', dash='dash')), row=3, col=1)
+        
+        
+        # V_double_dot_5KHz plot
+        fig.add_trace(go.Scatter(x=TVC_table['Time_s'], y=TVC_table['V_double_dot_five_kHz'], mode='lines', name='V_double_dot_five_kHz', line=dict(color='black', width = 1)), row=4, col=1)
+        # Add dashed vertical line at time = T_star
+        Fast_ring_time = np.array(TVC_table.loc[(TVC_table["Time_s"]<=(actual_transition_time+.005))&(TVC_table["Time_s"]>=actual_transition_time),'Time_s'])
+        max_V_double_dot_five_kHz = np.nanmax(TVC_table['V_double_dot_five_kHz'])
+        min_V_double_dot_five_kHz = np.nanmin(TVC_table['V_double_dot_five_kHz'])
+        fig.add_trace(go.Scatter(x=Fast_ring_time, y=[alpha_FT]*len(Fast_ring_time),
+                                 mode='lines', name=f'alpha_FT = {round(alpha_FT,4)} mV/s/s', line=dict(color='darkred', dash='dash')), row=4, col=1)
+        fig.add_trace(go.Scatter(x=Fast_ring_time, y=[-alpha_FT]*len(Fast_ring_time),
+                                 mode='lines', name=f'-alpha_FT = {round(-alpha_FT,4)} mV/s/s', line=dict(color='darkred', dash='dash')), row=4, col=1)
+        if not np.isnan(T_FT):
+            fig.add_trace(go.Scatter(x=[T_FT]*len(np.arange(min_V_double_dot_five_kHz, max_V_double_dot_five_kHz, 1.)), y=np.arange(min_V_double_dot_five_kHz, max_V_double_dot_five_kHz, 1.),
+                                     mode='lines', name=f'T_FT = {round(T_FT,4)}s', line=dict(color='darkred', dash='dash')), row=4, col=1)
+
+        # I_dot_5_kHz plot
+        fig.add_trace(go.Scatter(x=TVC_table['Time_s'], y=TVC_table['I_dot_five_kHz'], mode='lines', name='I_dot_5_kHz', line=dict(color='black', width = 1)), row=5, col=1)
+        
+        # Add dashed vertical line at time = T_star
+        fig.add_trace(go.Scatter(x=[actual_transition_time, actual_transition_time], y=[TVC_table['I_dot_five_kHz'].min(), TVC_table['I_dot_five_kHz'].max()],
+                                 mode='lines', name=f'T_star = {round(actual_transition_time,4)}s', line=dict(color='red', dash='dash')), row=5, col=1)
+        
+
+        # Update layout
+        fig.update_layout(
+
+            height=1200,
+            width = 1200,
+            showlegend=True,
+            
+        )
+        
+        # Update x and y axes
+
+        fig.update_yaxes(title_text="mV", row=1, col=1)
+        fig.update_xaxes(title_text="Time s", row=5, col=1)
+        fig.update_yaxes(title_text="pA", row=2, col=1)
+        fig.update_yaxes(title_text="mV/ms", row=3, col=1)
+        fig.update_yaxes(title_text="mV/ms/ms", row=4, col=1)
+        fig.update_yaxes(title_text="pA/ms", row=5, col=1)
+        
+        BE_fit_values_dict={"Bridge Error (GΩ)" : np.round(BE_val,4),
+                            "Transition time" : np.round(actual_transition_time,4),
+                            "⍺ FT" : np.round(alpha_FT, 4), 
+                            "T_FT" : np.round(T_FT, 4),
+                            "Δ t_ref_first_positive" : np.round(delta_t_ref_first_positive,4),
+                            "T_ref_cell" : np.round(T_ref_cell,4),
+                            "Pre_T_current" : np.round(pre_T_current,4),
+                            "Post_T_current" : np.round(post_T_current, 4),
+                            "first sign change" : np.round(first_sign_change,4),
+                            "T_start_fit" : np.round(T_start_fit, 4)}
+        
+        BE_fit_values_table = pd.DataFrame(list(BE_fit_values_dict.items()), 
+                                           columns=["Parameter", "Value"])
+
+        
+        
+        return fig, BE_val, condition_table, BE_fit_values_table
+    
+def get_sweep_linear_properties_analysis(cell_dict, current_sweep):
+    
+    #Get sweep based linear properties and plots dicts
+    #Same code as in sw_an.get_sweep_linear_properties
+    
+        
+        
+    Full_TVC_table = cell_dict['Full_TVC_table']
+    Sweep_info_table = cell_dict['Sweep_info_table']
+    Stim_amp_pA = Sweep_info_table.loc[Sweep_info_table['Sweep'] == current_sweep,'Stim_amp_pA'].values[0]
+    time_cst = Sweep_info_table.loc[Sweep_info_table['Sweep'] == current_sweep,'Time_constant_ms'].values[0]
+    R_in = Sweep_info_table.loc[Sweep_info_table['Sweep'] == current_sweep,'Input_Resistance_GOhms'].values[0]
+    
+    stim_start = Sweep_info_table.loc[Sweep_info_table['Sweep'] == current_sweep,'Stim_start_s'].values[0]
+    stim_end = Sweep_info_table.loc[Sweep_info_table['Sweep'] == current_sweep,'Stim_end_s'].values[0]
+    current_TVC_table= ordifunc.get_filtered_TVC_table(Full_TVC_table,current_sweep,do_filter=True,filter=5.,do_plot=False)
+
+    BE = Sweep_info_table.loc[current_sweep, "Bridge_Error_GOhms"]
+    TVC_table = current_TVC_table.copy()
+    #rely on BE corrected trace
+    TVC_table.loc[:,'Membrane_potential_mV'] = TVC_table.loc[:,'Membrane_potential_mV']-BE*TVC_table.loc[:,'Input_current_pA']
+    
+
+    TC_plot_dict = sw_an.fit_membrane_time_cst_new(TVC_table,stim_end+0.002,
+                                                      (stim_end+0.060),
+                                                      do_plot=True)
+    best_A,best_tau,SS_potential,RMSE = sw_an.fit_membrane_time_cst_new(TVC_table,stim_end+0.002,
+                                                                                     (stim_end+0.060),
+                                                                                     do_plot=False)
+    
+    if np.isnan(best_tau):
+        transient_time = .030 
+    else:
+        transient_time = 3*best_tau
+    
+    R_in, resting_potential, holding_potential, SS_potential, R2 = sw_an.estimate_input_resistance_and_resting_potential(TVC_table, 
+                                                                              stim_start, 
+                                                                              stim_end, 
+                                                                              best_tau, 
+                                                                              do_plot = False)
+    
+    R_in_plot_dict = sw_an.estimate_input_resistance_and_resting_potential(TVC_table, 
+                                                       stim_start, 
+                                                       stim_end, 
+                                                       best_tau, 
+                                                       do_plot = True)
+    
+    Do_linear_analysis, Do_linear_analysis_table = sw_an.check_criteria_linear_analysis(TVC_table,  
+                                                                                        stim_start, 
+                                                                                        stim_end, 
+                                                                                        transient_time, 
+                                                                                        R2)
+    if Do_linear_analysis == False:
+    
+        
+        SS_potential = np.nan
+        resting_potential = np.nan
+        holding_potential = np.nan
+
+        R_in = np.nan
+        time_cst = np.nan
+    
+    linear_fit_table=pd.DataFrame([best_A,
+                                  best_tau,
+                                  SS_potential,
+                                  RMSE,
+                                  RMSE/best_A])
+    linear_fit_table.index=['A','tau', 'C','RMSE', "RMSE/A"]
+    
+    
+    properties_table=pd.DataFrame([BE,
+                                  Stim_amp_pA,
+                                  holding_potential,
+                                  resting_potential,
+                                  R_in,
+                                  time_cst
+                                  ])
+    
+    properties_table.index= ['Bridge Error', "Stimulus amplitude pA",'Holding potential mV', 'Resting Potential mV', 'Input Resistance GOhms', 'Time constant ms']
+    
+    
+    TC_plotly = sw_an.plot_fit_membrane_time_cst_new(TC_plot_dict, TACO_App=True)
+    R_in_plot = sw_an.plot_estimate_input_resistance_and_resting_potential(R_in_plot_dict, sampling_step = 1, TACO_App=True)
+    
+    return Do_linear_analysis_table, TC_plotly, R_in_plot, properties_table, linear_fit_table
+
+
+def replace_bools_with_emojis(df, true_emoji="✅", false_emoji="❌"):
+    """
+    Replace all boolean values in a DataFrame with emojis.
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        Input DataFrame.
+    true_emoji : str, optional
+        Emoji to replace True values. Default is "✅".
+    false_emoji : str, optional
+        Emoji to replace False values. Default is "❌".
+
+    Returns
+    -------
+    pd.DataFrame
+        A new DataFrame with boolean values replaced by emojis.
+    """
+    df_replaced = df.copy()
+    bool_mask = df_replaced.applymap(lambda x: isinstance(x, (bool, pd.BooleanDtype().type)))
+    df_replaced = df_replaced.where(~bool_mask, df_replaced.replace({True: true_emoji, False: false_emoji}))
+    return df_replaced
+       
+def get_adaptation_analysis(cell_dict, Adaptation_feature_to_display):
+
+    
+    Adaptation_table = cell_dict['Cell_Adaptation']
+    Full_SF_table = cell_dict['Full_SF_table']
+    sweep_info_table = cell_dict['Sweep_info_table']
+    Sweep_QC_table = cell_dict['Sweep_QC_table']
+    
+    current_adaptation_measure = Adaptation_table.loc[Adaptation_table['Feature'] == Adaptation_feature_to_display, "Measure" ].values[0]
+    
+
+    
+    interval_based_feature = fir_an.collect_interval_based_features_test(Full_SF_table, sweep_info_table, Sweep_QC_table, 0.5, Adaptation_feature_to_display, current_adaptation_measure)
+            
+    plot_dict = fir_an.fit_adaptation_test(interval_based_feature, do_plot=True)
+    
+    adaptation_plotly = TACO_plots.plot_Adaptation_fit_plot_choice(plot_dict, 
+                                                                   plot_type = "plotly")
+    adaptation_plot = TACO_plots.plot_Adaptation_fit_plot_choice(plot_dict, 
+                                                                   plot_type = "matplotlib")
+
+    
+    
+    Adaptation_table = Adaptation_table.apply(lambda col: col.round(3) if col.dtype == "float" else col)
+    
+    return adaptation_plotly,adaptation_plot, Adaptation_table
 
 
 
 
+def get_detailed_IO_fit(cell_dict, Firing_response_type, response_duration):
+    
+    
+    Full_SF_table = cell_dict['Full_SF_table']
+    cell_sweep_info_table = cell_dict['Sweep_info_table']
+    sweep_QC_table = cell_dict['Sweep_QC_table']
+    
+    stim_freq_table = fir_an.get_stim_freq_table(
+        Full_SF_table.copy(), 
+        cell_sweep_info_table.copy(),
+        sweep_QC_table.copy(), 
+        float(response_duration),
+        str(Firing_response_type))
+    
+    pruning_obs, do_fit, condition_table = fir_an.data_pruning_I_O(stim_freq_table,cell_sweep_info_table)
+    
+    # --- Default style ---
+    default_style = {
+        "fontsize": 14,
+        "tick_font_size": 12,
+        "line_width": 2,
+        "marker_size": 10,
+        "passed_color": "#0072B2",
+        "failed_color": "#EE6677",
+        "trimmed_color": "#00694d",
+        "initial_color": "#56B4E9",
+        "final_color": "#D55E00",
+        "model_color": "#E69F00",
+        "gain_color": "#d52b00",
+        "linear_color": "#000000",
+        "threshold_color": "#000000",
+        "saturation_color": "#D55E00",
+        "failure_color": "#D55E00"
+    }
+    
+    s = default_style
+    
+    if do_fit == True:
+        IO_plot_dict = fir_an.get_IO_features(stim_freq_table, str(Firing_response_type), float(response_duration), do_plot = True)
+        
+        
+        fig_plotly = TACO_plots.plot_IO_detailed_fit_plot_choice(IO_plot_dict, 
+                                                                 plot_type ="plotly",
+                                                                 do_fit = True)
+        fig_matplotlib = TACO_plots.plot_IO_detailed_fit_plot_choice(IO_plot_dict, 
+                                                                     plot_type = "matplotlib",
+                                                                     do_fit = True)
+    else:
+        fig_plotly = TACO_plots.plot_IO_detailed_fit_plot_choice(None, 
+                                                                 stim_freq_table,
+                                                                 "plotly",
+                                                                 do_fit = False)
+        fig_matplotlib = TACO_plots.plot_IO_detailed_fit_plot_choice(None, 
+                                                                     stim_freq_table, 
+                                                                     "matplotlib",
+                                                                     do_fit=False)
+        
+    
+    
+    return fig_plotly, fig_matplotlib, stim_freq_table, pruning_obs, condition_table
+    
 
 
 def server(input: Inputs, output: Outputs, session: Session):
@@ -808,11 +1672,125 @@ def server(input: Inputs, output: Outputs, session: Session):
 
     
     print("Hello World!")
+    unit_dict = {"Gain" : "Hz/pA",
+                 "Threshold" : "pA",
+                 "Saturation_Frequency" :  "Hz",
+                 "Saturation_Stimulus" : "pA",
+                 "Response_Fail_Frequency" : "Hz",
+                 "Response_Fail_Stimulus" : "pA"}
+    
+    rename_dict = {"Gain" : "Gain (Hz/pA)",
+                 "Threshold" : "Threshold (pA)",
+                 "Saturation_Frequency" :  "Saturation Frequency (Hz)",
+                 "Saturation_Stimulus" : "Saturation Stimulus (pA)",
+                 "Response_Fail_Frequency" : "Response Fail Frequency (Hz)",
+                 "Response_Fail_Stimulus" : "Response Fail Stimulus (pA)"}
+    
+    color_dict = {'Input_current_pA': 'black',
+                  'Membrane potential': 'black',
+                  'Membrane potential BE Corrected': "black",
+                  "Membrane potential original" : "red",
+                  'Threshold': "#a2c5fc",
+                  "Upstroke": "#0562f5",
+                  "Peak": "#2f0387",
+                  "Downstroke": "#9f02e8",
+                  "Fast_Trough": "#c248fa",
+                  "fAHP": "#d991fa",
+                  "Trough": '#fc3873',
+                  "Slow_Trough": "#96022e",
+                  "ADP":'#fc0366'
+                  }
+    
+    saving_dict = reactive.Value({
+        "TVC_table": {"trigger": 0, "object": None, "format": "csv"},
+        "Spike_feature_table": {"trigger": 0, "object": None, "format": "csv"},
+    })
+    
+    saving_parameters_dict = reactive.Value({"saving_path" : None,
+                                             "object_to_save" : None,
+                                             "saving_format" : None})
+    
+    
+    
+    current_sweep_TVC_table_react_var = reactive.Value(None)
+    
+    current_sweep_info_table_react_var = reactive.Value(None)
+    current_sweep_QC_table_react_var = reactive.Value(None)
+    
+    Time_based_IO_figure_react_var = reactive.Value(None)
+    Gain_regression_plotly_fig_react_var = reactive.Value(None)
+    Gain_regression_table_react_var=reactive.Value(None)
+    
+    Threshold_regression_plotly_fig_react_var = reactive.Value(None)
+    Threshold_regression_table_react_var = reactive.Value(None)
+    
+    Saturation_Frequency_regression_plotly_fig_react_var = reactive.Value(None)
+    Saturation_Frequency_regression_table_react_var = reactive.Value(None)
+    
+    Saturation_Stimulus_regression_plotly_fig_react_var = reactive.Value(None)
+    Saturation_Stimulus_regression_table_react_var = reactive.Value(None)
+    
+    Response_Failure_Frequency_regression_plotly_fig_react_var = reactive.Value(None)
+    Response_Failure_Frequency_regression_table_react_var = reactive.Value(None)
+    
+    Response_Failure_Stimulus_regression_plotly_fig_react_var = reactive.Value(None)
+    Response_Failure_Stimulus_regression_table_react_var = reactive.Value(None)
+    
+    IO_fit_plotly_react_var = reactive.Value(None)
+    IO_fit_matplotlib_react_var = reactive.Value(None)
+    stim_freq_table_react_var = reactive.Value(None)
+    pruning_obs_react_var = reactive.Value(None)
+    IO_condition_table_react_var = reactive.Value(None)
+    
+    sweep_spike_feature_plot_react_var = reactive.Value(None)
+    sweep_spike_feature_table_react_var = reactive.Value(None)
+    
+    BE_plot_react_var = reactive.Value(None)
+    BE_table_react_var = reactive.Value(None)
+    BE_value_react_var = reactive.Value(None)
+    BE_fit_values_dict_react_var = reactive.Value(None)
+    
+    current_sweep_linear_analysis_conditions_table_react_var = reactive.Value(None)
+    current_sweep_time_cst_plot_react_var = reactive.Value(None)
+    current_sweep_IR_plot_react_var = reactive.Value(None)
+    current_sweep_properties_table_react_vat = reactive.Value(None)
+    current_sweep_time_cst_table_react_var = reactive.Value(None)
+    
+    Adaptation_figure_plotly_react_var = reactive.Value(None)
+    Adaptation_figure_plot_react_var = reactive.Value(None)
+    Adaptation_table_react_var = reactive.Value(None)
     
     database_list = reactive.Value([])
     db_done = reactive.Value([])
+    cell_file_correctly_opened = reactive.Value(False)
+    variables_updated = reactive.Value(False)
 
+    current_status = reactive.Value({})
     
+    def set_status(task_name: str, message: str):
+        """Update or add a status message for a specific analysis task."""
+        status = current_status.get().copy()
+        status[task_name] = message
+        current_status.set(status)
+        
+    def get_error_message(tb, e):
+        # Try to find the last frame from *your* script
+        user_frame = next(
+            (f for f in reversed(tb) if "TACO_pipeline_App.py" in f.filename),
+            tb[-1]
+        )
+
+        # Compose short custom message
+        short_msg = (f"{type(e).__name__} at line {user_frame.lineno} \n"
+                     f"in {user_frame.name}: {str(e)}")
+
+        # Optional: include the code line itself
+        if user_frame.line:
+            short_msg += f"\n→ {user_frame.line.strip()}"
+            
+        return short_msg
+
+
     # Check for the first directory
     @output
     @render.ui
@@ -853,6 +1831,16 @@ def server(input: Inputs, output: Outputs, session: Session):
             return ui.HTML(
                 f"""<span style='color:red;'><b>Directory does not exist:</b> {dir_path}</span>"""
             )
+        
+        
+    @output
+    @render.ui
+    def processing_status_output():
+        status_dict = current_status.get()
+        if not status_dict:
+            return ui.p("No process running yet.")
+        messages = [f"{v}" for v in status_dict.values()]
+        return ui.HTML("<br>".join(messages))
 
 
     @output
@@ -1349,7 +2337,10 @@ def server(input: Inputs, output: Outputs, session: Session):
         
         i=1
         start_time = time.time()
-        
+        response_duration_dictionary={
+            'Time_based':[.005, .010, .025, .050, .100, .250, .500],
+            'Index_based':list(np.arange(2,18)),
+            'Interval_based':list(np.arange(1,17))}
         #Gather analysis for all cells in Full population class table
         with ui.Progress(min=0, max=len(cell_id_list)) as progress:
             for cell_id in cell_id_list: # For each cell
@@ -1395,15 +2386,12 @@ def server(input: Inputs, output: Outputs, session: Session):
                     cell_linear_values_line.columns = ['Cell_id','Input_Resistance_GOhms','Input_Resistance_GOhms_SD','Time_constant_ms','Time_constant_ms_SD', "Resting_potential_mV", 'Resting_potential_mV_SD']
                     cell_linear_values=pd.concat([cell_linear_values,cell_linear_values_line],ignore_index=True)
                     
-                    response_duration_dictionnary={
-                        'Time_based':[.005, .010, .025, .050, .100, .250, .500],
-                        'Index_based':list(np.arange(2,18)),
-                        'Interval_based':list(np.arange(1,17))}
+                    
 
                     if cell_fit_table.shape[0]==1:
 
-                        for response_type in response_duration_dictionnary.keys():
-                            output_duration_list=response_duration_dictionnary[response_type]
+                        for response_type in response_duration_dictionary.keys():
+                            output_duration_list=response_duration_dictionary[response_type]
                             for output_duration in output_duration_list:
                                 I_O_obs=cell_fit_table.loc[(cell_fit_table['Response_type']==response_type )& (cell_fit_table['Output_Duration']==output_duration),"I_O_obs"]
                                 
@@ -1502,8 +2490,8 @@ def server(input: Inputs, output: Outputs, session: Session):
                 progress.set(i, message="Processing ", detail=f" {i}/{len(cell_id_list)}; Time spent: {formatted_time}, Estimated remaining time:{remaining_formatted_time}")
                 i+=1
                 
-            for response_type in response_duration_dictionnary.keys():
-                output_duration_list=response_duration_dictionnary[response_type]
+            for response_type in response_duration_dictionary.keys():
+                output_duration_list=response_duration_dictionary[response_type]
                 for output_duration in output_duration_list:
                     
                     new_table = pd.DataFrame(columns=['Cell_id','Obs','I_O_NRMSE','Gain','Threshold','Saturation_Frequency','Saturation_Stimulus','Response_Fail_Frequency','Response_Fail_Stimulus',])
@@ -1555,9 +2543,11 @@ def server(input: Inputs, output: Outputs, session: Session):
             Full_population_class_table.to_csv(f'{saving_path}Full_Population_Class.csv')
             print("Done")
             return  f'Analysis Summary done. Problem with cells {problem_cell}'
-    
-    
-    ################## Cell Visualization 
+
+################## Cell Visualization    
+#%%General
+
+   
     @reactive.Effect
     @reactive.event(input.JSON_config_file)
     def _(): #Update automatically the list of cell id after the config file has been uploaded
@@ -1579,130 +2569,128 @@ def server(input: Inputs, output: Outputs, session: Session):
         
     @reactive.Effect
     @reactive.event(input.Update_cell_btn)
-    def update_variables_lists(): #Update lists of sweep, output duration... throughout the app
+    def update_variables_lists():
         
-        if input.JSON_config_file() and input.Cell_file_select() :
-            cells_dict = get_cell_tables()
-            Sweep_info_table = cells_dict["Sweep_info_table"]
-            sweep_list = list(Sweep_info_table.loc[:,"Sweep"])
-            
-            ui.update_selectize("Sweep_selected" ,choices=sweep_list)
-            ui.update_selectize("Sweep_selected_in_progress" ,choices=sweep_list)
-            ui.update_selectize("Sweep_selected_Linear_analysis", choices = sweep_list)
-            cell_fit_table = cells_dict["Cell_fit_table"]
-
-            sub_cell_fit_table = cell_fit_table.loc[cell_fit_table['Response_type'] == 'Time_based',:]
-            time_output_duration = list(sub_cell_fit_table.loc[:,'Output_Duration'].unique())
-
-            ui.update_select('Firing_output_duration_Time_based', choices=time_output_duration)
-            
-            sub_cell_fit_table = cell_fit_table.loc[cell_fit_table['Response_type'] == 'Index_based',:]
-            index_output_duration = list(sub_cell_fit_table.loc[:,'Output_Duration'].unique())
-            ui.update_select('Firing_output_duration_Index_based', choices=index_output_duration)
-            
-            sub_cell_fit_table = cell_fit_table.loc[cell_fit_table['Response_type'] == 'Interval_based',:]
-            interval_output_duration = list(sub_cell_fit_table.loc[:,'Output_Duration'].unique())
-            ui.update_select('Firing_output_duration_Interval_based', choices=interval_output_duration)
-            
-            
-            Adaptation_table = cells_dict['Cell_Adaptation']
-            Sub_Adatation_table = Adaptation_table.loc[(Adaptation_table['Obs'] == '--') & (Adaptation_table['Adaptation_Index'].notna()),:]
-            validated_features = list(Sub_Adatation_table.loc[:,'Feature'])
-            ui.update_select('Adaptation_feature_to_display', choices=validated_features)
-            
-    @reactive.Effect
-    @reactive.event(input.Update_cell_btn, input.Firing_response_type)
-    def update_IO_output_duration_list():
+        # Retrieve the cell dictionary from the reactive calc
+        cells_dict = get_cell_tables()
         
-        if input.JSON_config_file() and input.Cell_file_select() :
-            cell_dict=get_cell_tables()
-            cell_fit_table = cell_dict['Cell_fit_table']
-            response_type = input.Firing_response_type()
-
-            sub_cell_fit_table = cell_fit_table.loc[cell_fit_table['Response_type'] == response_type,:]
-            sub_cell_fit_table = sub_cell_fit_table[sub_cell_fit_table["I_O_obs"].isin(['Hill','Hill-Sigmoid'])]
-            time_output_duration = list(sub_cell_fit_table.loc[:,'Output_Duration'].unique())
-            
-            if input.Firing_response_type()=='Time_based':
-                time_output_duration = [float(x) for x in time_output_duration]
-                
-            else:
-                
-                time_output_duration = [int(float(x)) for x in time_output_duration]
-            
-            
-            ui.update_select(
-                "Firing_output_duration_new",
-                label="Select output duration",
-                choices=time_output_duration,
-                
-            )
-            
-            
-    @reactive.Effect
-    @reactive.event(input.Update_cell_btn, input.Firing_output_duration_new)
-    def update_IO_plot_to_display_list():
-        
-        if input.JSON_config_file() and input.Cell_file_select() and input.Firing_output_duration_new():
-            
-            cell_dict=get_cell_tables()
-            Cell_feature_table = cell_dict['Cell_feature_table']
-            Full_SF_table = cell_dict['Full_SF_table']
-            Sweep_info_table = cell_dict['Sweep_info_table']
-            Sweep_QC_table = cell_dict['Sweep_QC_table']
-            
-            Firing_response_type = input.Firing_response_type()
-            if Firing_response_type=='Time_based':
-                
-                Firing_output_duration_new = float(input.Firing_output_duration_new())
-            else:
-                Firing_output_duration_new = int(float(input.Firing_output_duration_new()))
-            
-            
-            
-            Test_Gain = Cell_feature_table.loc[(Cell_feature_table['Response_type']==Firing_response_type)&
-                                                            (Cell_feature_table['Output_Duration']==Firing_output_duration_new), 'Gain'].values[0]
-            
-            
-            if not np.isnan(Test_Gain): # if IO analysis was successful, update plotlist
-                stim_freq_table = fir_an.get_stim_freq_table(Full_SF_table, Sweep_info_table, Sweep_QC_table, Firing_output_duration_new, Firing_response_type)
-                plot_list = fir_an.get_IO_features(stim_freq_table, Firing_response_type, Firing_output_duration_new, do_plot=True)
-                
-
-                #Update choice input 
-                ui.update_selectize('Plot_new',label="Select plot to display", choices=list(plot_list.keys()))
-            
-            
+        if cells_dict is None:
+            return  # Safety check
+    
+        # --- Update sweep lists ---
+        Sweep_info_table = cells_dict["Sweep_info_table"]
+        sweep_list = list(Sweep_info_table["Sweep"])
+        ui.update_selectize("Sweep_selected", choices=sweep_list)
+        ui.update_selectize("Sweep_selected_in_progress", choices=sweep_list)
+        ui.update_selectize("Sweep_selected_Linear_analysis", choices=sweep_list)
+    
+        # --- Update output duration lists by response type ---
+        cell_fit_table = cells_dict["Cell_fit_table"]
+    
+        for response_type, select_id in [
+            ("Time_based", "Firing_output_duration_Time_based"),
+            ("Index_based", "Firing_output_duration_Index_based"),
+            ("Interval_based", "Firing_output_duration_Interval_based"),
+        ]:
+            sub_cell_fit_table = cell_fit_table.loc[
+                cell_fit_table["Response_type"] == response_type, :
+            ]
+            output_durations = list(sub_cell_fit_table["Output_Duration"].unique())
+            ui.update_select(select_id, choices=output_durations)
+    
+        # --- Update adaptation features ---
+        Adaptation_table = cells_dict["Cell_Adaptation"]
+        Sub_Adaptation_table = Adaptation_table.loc[
+            (Adaptation_table["Obs"] == "--")
+            & (Adaptation_table["Adaptation_Index"].notna()),
+            :,
+        ]
+        validated_features = list(Sub_Adaptation_table["Feature"])
+        ui.update_select("Adaptation_feature_to_display", choices=validated_features)
     
         
-    
+        
+        # Mark that variable lists were successfully updated
+        variables_updated.set(True)
+        
     @reactive.Calc
     @reactive.event(input.Update_cell_btn)
-    def get_cell_tables(): # function to open cell files
-
+    def get_cell_tables():  # function to open cell files
+    
         cell_id = input.Cell_file_select()
-        config_json_input = input.JSON_config_file()
-        if config_json_input and cell_id :
-            config_table = get_config_json_table()
-            saving_folder = config_table.loc[0,"path_to_saving_file"]
-            cell_file_path = str(saving_folder+str(cell_id))
-            
-            
-            Metadata_table = ordifunc.read_cell_file_h5(cell_file_path, "--",selection=["Metadata"])
-            
-            Database = Metadata_table['Database'].values[0]
-            
-           
-            current_config_line = config_table[config_table['database_name'] == Database]
-            cell_id=cell_id.replace('Cell_','')
-            cell_id = cell_id.replace('.h5','')
-
-            
-            cell_dict = ordifunc.read_cell_file_h5(cell_id, current_config_line,selection=["All"])
+        cell_file_correctly_opened.set(False)
+        current_status.set({})
+        # --- Step 1: Show "Opening file..." modal ---
+        ui.modal_show(
+            ui.modal(
+                f"Opening cell {cell_id} file... ⏳",
+                title="Please wait",
+                easy_close=True,
+                footer=None,
+            )
+        )
+    
+        try:
+            # --- Step 2: Main processing logic ---
+            config_json_input = input.JSON_config_file()
+            if config_json_input and cell_id:
+                config_table = get_config_json_table()
+                saving_folder = config_table.loc[0, "path_to_saving_file"]
+                cell_file_path = str(saving_folder + str(cell_id))
+    
+                Metadata_table = ordifunc.read_cell_file_h5(
+                    cell_file_path, "--", selection=["Metadata"]
+                )
+                Database = Metadata_table["Database"].values[0]
+    
+                current_config_line = config_table[
+                    config_table["database_name"] == Database
+                ]
+                cell_id = cell_id.replace("Cell_", "").replace(".h5", "")
+    
+                
+    
+                cell_dict = ordifunc.read_cell_file_h5(
+                    cell_id, current_config_line, selection=["All"]
+                )
+                if cell_id == "120426S1P1":
+                    t = 2/0
+    
+            else:
+                raise ValueError("Missing JSON config or cell file selection.")
+    
+            # --- Step 3: Success message ---
+            time.sleep(1)
+            ui.modal_remove()  # Close the "Opening file..." modal
+            ui.modal_show(
+                ui.modal(
+                    f"Cell {cell_id} ready ✅",
+                    title="Success",
+                    easy_close=True,
+                    footer=ui.modal_button("OK", class_="btn-primary"),
+                )
+            )
+            cell_file_correctly_opened.set(True)
             return cell_dict
-            
-        
-        
+    
+        except Exception as e:
+            # --- Step 4: On error, close old modal and show error modal ---
+    
+            ui.modal_remove()
+            ui.modal_show(
+                ui.modal(
+                    f"An error occurred while opening cell {cell_id}: \n"
+                    f"<b>{type(e).__name__}</b>: {e}",
+                    title="❌ Error",
+                    easy_close=True,
+                    footer=ui.modal_button("Close", class_="btn-danger"),
+                )
+            )
+            cell_file_correctly_opened.set(False)
+    
+            # # Optionally, return None or re-raise depending on your logic
+            # return None
+    
     @reactive.Calc
     def get_config_json_table():
         config_json_input=input.JSON_config_file()
@@ -1719,33 +2707,167 @@ def server(input: Inputs, output: Outputs, session: Session):
                     new_table = ordifunc.open_json_config_file(file_path)
                     config_df=pd.concat([config_df, new_table],ignore_index = True)
             return config_df
+        
+        
     @output
-    @render.table
-    def config_json_table(): #Diplay the config json file
+    @render.data_frame
+    def config_json_table():  # Display the config JSON file
         config_table = get_config_json_table()
         
-        return config_table
-    
-    
-    @output
-    @render.table
-    @reactive.event(input.Update_cell_btn)
-    def cell_processing_time_table():
-        if input.JSON_config_file() and input.Cell_file_select() :
+        if config_table is not None and not config_table.empty:
+            # Transpose
+            config_table_to_display = config_table.T
+            
+            # Reset index to turn former column names into a column
+            config_table_to_display = config_table_to_display.reset_index()
+            
+            # Rename columns: first column = former column names, rest = database_name
+            config_table_to_display.columns = ["Information"] + list(config_table['database_name'])
+            
+            return config_table_to_display
+        else:
+            return pd.DataFrame()
+        
+    # Watch for any triggered save
+    @reactive.Effect
+    def watch_saving_dict():
+        d = saving_dict.get()
 
+        for key, entry in d.items():
+            if entry["trigger"] == 1:
+                # Reset trigger immediately to prevent loops
+                entry["trigger"] = 0
+                d[key] = entry
+                saving_dict.set(d)
                 
-            cell_dict = get_cell_tables()
-            processing_time_table = cell_dict["Processing_table"] 
-            return processing_time_table
+                # Save parameters for later
+                s = {
+                    "object_to_save": entry["object"],
+                    "saving_format": entry["format"],
+                    "key": key,
+                }
+                
+                saving_parameters_dict.set(s)
+                
+                
+                if entry['format'] == "csv":
+                
+                    # Show modal for confirmation
+                    ui.modal_show(
+                        ui.modal(
+                            f"Save {key}?",
+                            ui.input_text("save_name", "File name:"),
+                            ui.input_action_button("confirm_save", "Confirm"),
+                            ui.h5('Table preview'),
+                            ui.output_data_frame('show_table_to_save'),
+                            easy_close=True,
+                        )
+                    )
+                elif entry['format'] == "plot":
+                    
+                    # Show modal for confirmation
+                    ui.modal_show(
+                        ui.modal(
+                            f"Save {key}?",
+                            ui.input_text("save_name", "File name:"),
+                            ui.input_action_button("confirm_save", "Confirm"),
+                            # ui.h5("Plot preview"),
+                            # #output_widget('show_plot_to_save'),
+                            # ui.output_plot("show_plot_to_save"),
+                            easy_close=True,
+                        )
+                    )
+
+                break
+            
+    # Handle save confirmation
+    
+    @reactive.Effect
+    @reactive.event(input.confirm_save)
+    def perform_save():
+        s = saving_parameters_dict.get().copy()
+        
+        
+        s["saving_path"] = input.save_name()
+        
+        saving_parameters_dict.set(s)
+        
+        filename = s["saving_path"]
+        obj = s["object_to_save"]
+        
+        fmt = s["saving_format"]
+    
+        if not filename:
+            ui.modal_show(
+                ui.modal("⚠️ No filename provided.", easy_close=True),
+                session=session
+            )
+            return
+    
+        try:
+            if fmt == "csv" and isinstance(obj, pd.DataFrame):
+                obj.to_csv(f"{filename}.csv", index=False)
+                saving_result = f"✅ Saved {filename}.csv"
+            elif fmt == "plot" and hasattr(obj, "savefig"):
+                
+                obj.savefig(f"{filename}.pdf",dpi=300, bbox_inches="tight")
+                saving_result = f"✅ Saved {filename}.pdf"
+            else:
+                saving_result = "❌ Unsupported format or object type"
+        except Exception as e:
+            saving_result = f"⚠️ Error while saving: {e}"
+    
+        # Reset parameters
+        saving_parameters_dict.set({
+            "saving_path": None,
+            "object_to_save": None,
+            "saving_format": None,
+        })
+    
+        # Close the input modal
+        ui.modal_remove()
+        
+        # ✅ Display confirmation modal
+        ui.modal_show(
+            ui.modal(
+                saving_result,
+                easy_close=True,
+            ),
+            session=session
+        )
+        
+        
         
     @output
-    @render.table
+    @render.data_frame
+    def show_table_to_save():
+        s = saving_parameters_dict.get().copy()
+        table_to_save = s["object_to_save"]
+        return table_to_save
+    
+    @output
+    @render.plot
+    def show_plot_to_save():#This display modifies the plot. The plot needs to be different than the plot actually saved
+        s = saving_parameters_dict.get().copy()
+        plot_to_show = s["object_to_show"]
+        return plot_to_show
+    
+    
+    
+
+#%%Cell summary
+      
+
+    @output
+    @render.data_frame
     @reactive.event(input.Update_cell_btn)
     def Cell_Metadata_table():
-        if input.JSON_config_file() and input.Cell_file_select() :
+        if input.JSON_config_file() and input.Cell_file_select() : # and cell_file_correctly_opened():
 
                 
             cell_dict = get_cell_tables()
+            if cell_dict is None:
+                return  # Safety check
             Metadata_table = cell_dict['Metadata_table']
             for col in Metadata_table:
                 if 'Unnamed' in col:
@@ -1757,13 +2879,15 @@ def server(input: Inputs, output: Outputs, session: Session):
             return Metadata_table
         
     @output
-    @render.table
+    @render.data_frame
     @reactive.event(input.Update_cell_btn)
     def Cell_linear_properties_table():
-        if input.JSON_config_file() and input.Cell_file_select() :
+        if input.JSON_config_file() and input.Cell_file_select() : # and cell_file_correctly_opened():
 
                 
             cell_dict = get_cell_tables()
+            if cell_dict is None:
+                return  # Safety check
             
             #Same code as in ordifunc.create_summary_tables()
             Cell_IR, _ = ordifunc.compute_cell_input_resistance(cell_dict)
@@ -1781,470 +2905,295 @@ def server(input: Inputs, output: Outputs, session: Session):
             Capacitance = Time_cst_mean/Cell_IR
             
             
-            Linear_table = pd.DataFrame({'Input Resistance GΩ':[Cell_IR],
-                                         'Time constant ms' : [Time_cst_mean],
-                                         'Resting membrane potential mV' : [Resting_potential_mean],
-                                         'Capacitance pF' : [Capacitance]})
+            Linear_table = pd.DataFrame({'Input Resistance (GΩ)':[Cell_IR],
+                                         'Time constant (ms)' : [Time_cst_mean],
+                                         'Resting membrane potential (mV)' : [Resting_potential_mean],
+                                         'Capacitance (pF)' : [Capacitance]})
             
             
             Linear_table = Linear_table.T
             Linear_table = Linear_table.reset_index(drop=False)
-            Linear_table.columns = [" Linear properties", " "]
+            Linear_table.columns = [" Linear properties", "Value"]
+            Linear_table.loc[:,"Value"] = np.round(Linear_table.loc[:,"Value"], 2)
+            Linear_table["Value"] = Linear_table["Value"].replace(np.nan, "--")  # or "—" if you prefer
             return Linear_table
         
     @output
-    @render.table
+    @render.data_frame
     @reactive.event(input.Update_cell_btn)
     def Cell_Firing_properties_table():
-        if input.JSON_config_file() and input.Cell_file_select() :
-
+        if input.JSON_config_file() and input.Cell_file_select() : # and cell_file_correctly_opened():
+            
                 
             cell_dict = get_cell_tables()
+            if cell_dict is None:
+                return  # Safety check
             cell_feature_table = cell_dict['Cell_feature_table']
+            cell_fit_table = cell_dict['Cell_fit_table']
+
+            cell_feature_table = pd.merge(cell_feature_table, cell_fit_table.loc[:, ['Response_type', 'Output_Duration', 'I_O_obs', 'I_O_NRMSE']])
             cell_feature_table = cell_feature_table.loc[:,['Response_type',
                                                            'Output_Duration',
+                                                           'I_O_obs',
+                                                           'I_O_NRMSE',
                                                            "Gain", 
                                                            'Threshold',
                                                            'Saturation_Frequency', 
                                                            'Saturation_Stimulus', 
                                                            'Response_Fail_Frequency',
                                                            "Response_Fail_Stimulus"]]
+            unit_dict = {"Gain" : "Gain (Hz/pA)",
+                         "Threshold" : "Threshold (pA)",
+                         "Saturation_Frequency" :  "Saturation Frequency (Hz)",
+                         "Saturation_Stimulus" : "Saturation Stimulus (pA)",
+                         "Response_Fail_Frequency" : "Response Fail Frequency (Hz)",
+                         "Response_Fail_Stimulus" : "Response Fail Stimulus (pA)"}
+            for col in ['I_O_NRMSE', "Gain", 'Threshold','Saturation_Frequency', 'Saturation_Stimulus', 'Response_Fail_Frequency',"Response_Fail_Stimulus"]:
+                cell_feature_table.loc[:,col] = np.round(cell_feature_table.loc[:,col], 2)
             
+                cell_feature_table.loc[:,col] = cell_feature_table.loc[:,col].replace(np.nan, "--")  # or "—" if you prefer
+                                                                                                        
+            cell_feature_table = cell_feature_table.rename(columns=unit_dict)
             return cell_feature_table
         
     @output
-    @render.table
+    @render.data_frame
     @reactive.event(input.Update_cell_btn)
     def Cell_Adaptation_table():
-        if input.JSON_config_file() and input.Cell_file_select() :
+        if input.JSON_config_file() and input.Cell_file_select() : # and cell_file_correctly_opened():
 
                 
             cell_dict = get_cell_tables()
+            if cell_dict is None:
+                return  # Safety check
             cell_Adaptation = cell_dict['Cell_Adaptation']
+
+            cell_Adaptation = cell_Adaptation.loc[:, ['Feature', 'Measure','Obs', 'Adaptation_Index', "C", 'M','RMSE']]
+            for col in ['Adaptation_Index', "C", 'M','RMSE']:
+                cell_Adaptation.loc[:,col] = np.round(cell_Adaptation.loc[:,col], 2)
+            
+                cell_Adaptation.loc[:,col] = cell_Adaptation.loc[:,col].replace(np.nan, "--")  # or "—" if you prefer
             
             return cell_Adaptation
         
         
         
-    @output
-    @render_widget
-    @reactive.event(input.Update_cell_btn)
-    def cell_input_resistance_v_stim_amp_plolty():
-        if input.Cell_file_select() :
-            cell_dict = get_cell_tables()
-            Sweep_info_table = cell_dict["Sweep_info_table"]
-            Sweep_QC_table = cell_dict["Sweep_QC_table"]
-            sweep_info_QC_table = pd.merge(Sweep_info_table, Sweep_QC_table.loc[:, ['Passed_QC', "Sweep"]], on="Sweep")
-            sub_sweep_info_QC_table = sweep_info_QC_table.loc[sweep_info_QC_table['Passed_QC'] == True, :]
-            sub_sweep_info_QC_table['Protocol_id'] =  sub_sweep_info_QC_table['Protocol_id'].astype(str)
-            
-
-            
-            # Create a scatter plot with color based on 'Protocol_id'
-            scatter_plot = px.scatter(
-                                sub_sweep_info_QC_table,
-                                x='Stim_amp_pA', 
-                                y='Input_Resistance_GOhms',
-                                color='Protocol_id',  # Colors the points based on 'Protocol_id'
-                                labels={'Stim_amp_pA': 'Stimulus Amplitude (pA)', 
-                                        'Input_Resistance_GOhms': 'Input Resistance (GOhms)',
-                                        'Protocol_id': 'Protocol'},  # Renames the legend title
-                                hover_data={'Sweep': True}  # Adds 'Sweep' to hover data
-                                    )
-            
-            # Create a Plotly figure and update layout
-            figure = go.Figure(data=scatter_plot.data)
-            figure.update_layout(
-                autosize=True,
-                xaxis_title="Stimulus amplitude (pA)", 
-                yaxis_title="Input Resistance (GOhms)",
-                template="plotly_white"
-            )
-            
-            return figure
-    
-    @output
-    @render_widget
-    @reactive.event(input.Update_cell_btn)
-    def cell_time_constant_v_stim_amp_plolty():
-        if input.Cell_file_select() :
-            cell_dict = get_cell_tables()
-            Sweep_info_table = cell_dict["Sweep_info_table"]
-            Sweep_QC_table = cell_dict["Sweep_QC_table"]
-            sweep_info_QC_table = pd.merge(Sweep_info_table, Sweep_QC_table.loc[:, ['Passed_QC', "Sweep"]], on="Sweep")
-            sub_sweep_info_QC_table = sweep_info_QC_table.loc[sweep_info_QC_table['Passed_QC'] == True, :]
-            sub_sweep_info_QC_table['Protocol_id'] =  sub_sweep_info_QC_table['Protocol_id'].astype(str)
-            # Create a scatter plot with color based on 'Protocol_id'
-            scatter_plot = px.scatter(
-                                sub_sweep_info_QC_table,
-                                x='Stim_amp_pA', 
-                                y='Time_constant_ms',
-                                color='Protocol_id',  # Colors the points based on 'Protocol_id'
-                                labels={'Stim_amp_pA': 'Stimulus Amplitude (pA)', 
-                                        'Time_constant_ms': 'Time_constant (ms)',
-                                        'Protocol_id': 'Protocol'},  # Renames the legend title
-                                hover_data={'Sweep': True}  # Adds 'Sweep' to hover data
-                                    )
-            
-            # Create a Plotly figure and update layout
-            figure = go.Figure(data=scatter_plot.data)
-            figure.update_layout(
-                autosize=True,
-                xaxis_title="Stimulus amplitude (pA)", 
-                yaxis_title="Time_constant (ms)",
-                template="plotly_white"
-            )
-            
-            return figure
-        
-    @output
-    @render_widget
-    @reactive.event(input.Update_cell_btn)
-    def cell_SS_potential_v_stim_amp_plolty():
-        if input.Cell_file_select():
-            cell_dict = get_cell_tables()
-            Sweep_info_table = cell_dict["Sweep_info_table"]
-            Sweep_QC_table = cell_dict["Sweep_QC_table"]
-            sweep_info_QC_table = pd.merge(Sweep_info_table, Sweep_QC_table.loc[:, ['Passed_QC', "Sweep"]], on="Sweep")
-            sub_sweep_info_QC_table = sweep_info_QC_table.loc[sweep_info_QC_table['Passed_QC'] == True, :]
-            sub_sweep_info_QC_table['Protocol_id'] = sub_sweep_info_QC_table['Protocol_id'].astype(str)
-            
-            sub_sweep_info_QC_table_SS_potential = sub_sweep_info_QC_table.dropna(subset=['SS_potential_mV'])
-            SS_potential_mV_list = list(sub_sweep_info_QC_table_SS_potential['SS_potential_mV'])
-            Stim_amp_pA_list = list(sub_sweep_info_QC_table_SS_potential['Stim_SS_pA'])
-            
-            # Perform linear regression to get Input Resistance and intercept
-            IR_regression_fit, intercept = fir_an.linear_fit(Stim_amp_pA_list, SS_potential_mV_list)
-            
-            # Create regression line points
-            min_amp = min(Stim_amp_pA_list)
-            max_amp = max(Stim_amp_pA_list)
-            regression_line_x = np.arange(min_amp, max_amp)
-            #regression_line_x = [min_amp, max_amp]
-            regression_line_y = IR_regression_fit * regression_line_x + intercept
-            
-            # Create a scatter plot with color based on 'Protocol_id'
-            scatter_plot = px.scatter(
-                sub_sweep_info_QC_table,
-                x='Stim_SS_pA', 
-                y='SS_potential_mV',
-                color='Protocol_id',  # Colors the points based on 'Protocol_id'
-                labels={
-                    'Stim_SS_pA': 'Stimulus Amplitude (pA)', 
-                    'SS_potential_mV': 'Steady State potential (mV)',
-                    'Protocol_id': 'Protocol'
-                },
-                hover_data={'Sweep': True}  # Adds 'Sweep' to hover data
-            )
-            
-            # Create a Plotly figure and update layout
-            figure = go.Figure(data=scatter_plot.data)
-        
-            
-            
-            # Add Input Resistance to the legend
-            figure.add_trace(go.Scatter(
-                x=regression_line_x,  # Empty data for the legend entry
-                y=regression_line_y,
-                mode='lines',
-                line=dict(color='blue', dash='dash'),
-                name=f'Input Resistance: {IR_regression_fit:.2f} GΩ'  # Show Input Resistance in legend
-            ))
-            
-            # Update layout
-            figure.update_layout(
-                autosize=True,
-                xaxis_title="Stimulus amplitude (pA)", 
-                yaxis_title='Steady State potential (mV)',
-                template="plotly_white")
-            
-            return figure
+#%% Processing Report
 
     @output
-    @render_widget
-    def cell_Input_Resitance_analysis():
-        
-        if input.Sweep_selected() :
-            Do_linear_analysis_table, TC_plot_dict, R_in_plot_dict, properties_table, TC_table = get_sweep_linear_properties()
-            R_in_plot = sw_an.plot_estimate_input_resistance_and_resting_potential(R_in_plot_dict, sampling_step = 1, TACO_App=True)
-            return R_in_plot
-    
-    
-    
-    @output
-    @render_widget
-    def cell_Time_cst_analysis():
-        
-        if input.Sweep_selected() :
-            Do_linear_analysis_table, TC_plot_dict, R_in_plot_dict, properties_table, TC_table = get_sweep_linear_properties()
-            TC_plotly = sw_an.plot_fit_membrane_time_cst_new(TC_plot_dict, TACO_App=True)
-            return TC_plotly
-        
-        
-    @output
-    @render.table
-    def condition_table():
-        
-        if input.Sweep_selected() :
-            Do_linear_analysis_table, TC_plot_dict, R_in_plot_dict, properties_table, TC_table = get_sweep_linear_properties()
-            styled_table = Do_linear_analysis_table.style.apply(highlight_condition, subset=pd.IndexSlice["Condition Respected", :])
-            return styled_table
-        
-    @output
-    @render.table
-    def sweep_properties_table():
-        
-        if input.Sweep_selected() :
-            Do_linear_analysis_table, TC_plot_dict, R_in_plot_dict, properties_table, TC_table = get_sweep_linear_properties()
-            return properties_table.T
-        
-    @output
-    @render.table()
-    def linear_properties_fit_table():
-        if input.Sweep_selected() :
-            Do_linear_analysis_table, TC_plot_dict, R_in_plot_dict, properties_table, TC_table  = get_sweep_linear_properties()
-            TC_table = TC_table.T
-            TC_table = TC_table.style.set_table_attributes('class="dataframe shiny-table table w-auto"').apply(highlight_rmse_a)
-            return TC_table
-        
-        
-    @output
-    @render_widget
+    @render.data_frame
     @reactive.event(input.Update_cell_btn)
-    def cell_Holding_potential_v_Holding_current_plolty():
-        if input.Cell_file_select():
+    def cell_processing_time_table():
+        if input.JSON_config_file() and input.Cell_file_select() : # and cell_file_correctly_opened():
+    
+                
             cell_dict = get_cell_tables()
-            Sweep_info_table = cell_dict["Sweep_info_table"]
-            Sweep_QC_table = cell_dict["Sweep_QC_table"]
-            sweep_info_QC_table = pd.merge(Sweep_info_table, Sweep_QC_table.loc[:, ['Passed_QC', "Sweep"]], on="Sweep")
-            sub_sweep_info_QC_table = sweep_info_QC_table.loc[sweep_info_QC_table['Passed_QC'] == True, :]
-            sub_sweep_info_QC_table['Protocol_id'] =  sub_sweep_info_QC_table['Protocol_id'].astype(str)
-            
-            sub_sweep_info_QC_table_Holding_potential = sub_sweep_info_QC_table.dropna(subset=['Holding_potential_mV'])
-            
-            
-            
-            # Create a scatter plot with color based on 'Protocol_id'
-            scatter_plot = px.scatter(
-                sub_sweep_info_QC_table_Holding_potential,
-                x='Holding_current_pA', 
-                y='Holding_potential_mV',
-                color='Protocol_id',  # Colors the points based on 'Protocol_id'
-                labels={
-                    'Holding_current_pA': 'Holding Current (pA)', 
-                    'Holding_potential_mV': 'Holding potential (mV)',
-                    'Protocol_id': 'Protocol'
-                },
-                hover_data={'Sweep': True}  # Adds 'Sweep' to hover data
-            )
-            
-            # Create a Plotly figure and update layout
-            figure = go.Figure(data=scatter_plot.data)
-        
-            
-            
-            
-            # Update layout
-            figure.update_layout(
-                autosize=True,
-                xaxis_title="Holding current (pA)", 
-                yaxis_title='Holding potential (mV)',
-                template="plotly_white"
-            )
-            
-            return figure
+            processing_time_table = cell_dict["Processing_table"] 
+            return processing_time_table
 
-        
-    @output
-    @render_widget
-    @reactive.event(input.Update_cell_btn)
-    def cell_Holding_potential_mV_v_stim_amp_plolty():
-        if input.Cell_file_select() :
-            cell_dict = get_cell_tables()
-            Sweep_info_table = cell_dict["Sweep_info_table"]
-            Sweep_QC_table = cell_dict["Sweep_QC_table"]
-            sweep_info_QC_table = pd.merge(Sweep_info_table, Sweep_QC_table.loc[:, ['Passed_QC', "Sweep"]], on="Sweep")
-            sub_sweep_info_QC_table = sweep_info_QC_table.loc[sweep_info_QC_table['Passed_QC'] == True, :]
-            sub_sweep_info_QC_table['Protocol_id'] =  sub_sweep_info_QC_table['Protocol_id'].astype(str)
-            # Create a scatter plot with color based on 'Protocol_id'
-            scatter_plot = px.scatter(
-                                sub_sweep_info_QC_table,
-                                x='Stim_amp_pA', 
-                                y='Holding_potential_mV',
-                                color='Protocol_id',  # Colors the points based on 'Protocol_id'
-                                labels={'Stim_amp_pA': 'Stimulus Amplitude (pA)', 
-                                        'Holding_potential_mV': 'Holding  potential (mV)',
-                                        'Protocol_id': 'Protocol'},  # Renames the legend title
-                                hover_data={'Sweep': True}  # Adds 'Sweep' to hover data
-                                    )
-            
-            # Create a Plotly figure and update layout
-            figure = go.Figure(data=scatter_plot.data)
-            figure.update_layout(
-                autosize=True,
-                xaxis_title="Stimulus amplitude (pA)", 
-                yaxis_title='Holding potential (mV)',
-                template="plotly_white"
-            )
-            
-            return figure
-        
-    @output
-    @render_widget
-    @reactive.event(input.Update_cell_btn)
-    def cell_Holding_current_pA_v_stim_amp_plolty():
-        if input.Cell_file_select() :
-            cell_dict = get_cell_tables()
-            Sweep_info_table = cell_dict["Sweep_info_table"]
-            Sweep_QC_table = cell_dict["Sweep_QC_table"]
-            sweep_info_QC_table = pd.merge(Sweep_info_table, Sweep_QC_table.loc[:, ['Passed_QC', "Sweep"]], on="Sweep")
-            sub_sweep_info_QC_table = sweep_info_QC_table.loc[sweep_info_QC_table['Passed_QC'] == True, :]
-            sub_sweep_info_QC_table['Protocol_id'] =  sub_sweep_info_QC_table['Protocol_id'].astype(str)
-            # Create a scatter plot with color based on 'Protocol_id'
-            scatter_plot = px.scatter(
-                                sub_sweep_info_QC_table,
-                                x='Stim_amp_pA', 
-                                y='Holding_current_pA',
-                                color='Protocol_id',  # Colors the points based on 'Protocol_id'
-                                labels={'Stim_amp_pA': 'Stimulus Amplitude (pA)', 
-                                        'Holding_current_pA': 'Holding  current (pA)',
-                                        'Protocol_id': 'Protocol'},  # Renames the legend title
-                                hover_data={'Sweep': True}  # Adds 'Sweep' to hover data
-                                    )
-            
-            # Create a Plotly figure and update layout
-            figure = go.Figure(data=scatter_plot.data)
-            figure.update_layout(
-                autosize=True,
-                xaxis_title="Stimulus amplitude (pA)", 
-                yaxis_title='Holding current (pA)',
-                template="plotly_white"
-            )
-            
-            return figure
-        
-        
+#%% Sweep information
+
     @output
     @render.data_frame
     @reactive.event(input.Update_cell_btn)
     def Sweep_info_table():
-        if input.Cell_file_select() :
+        if input.Cell_file_select() : # and cell_file_correctly_opened() :
             cell_dict = get_cell_tables()
+            if cell_dict is None:
+                return  # Safety check
             Sweep_info_table = cell_dict["Sweep_info_table"]
+            current_sweep_info_table_react_var.set(Sweep_info_table)
+            for col in Sweep_info_table.columns:
+                try:
+                    if np.issubdtype(Sweep_info_table[col].dtype, np.floating):
+                        Sweep_info_table[col] = np.round(Sweep_info_table[col], 2)
+                except TypeError:
+                    pass  # skip columns that can't be checked
+
             Sweep_info_table['Bridge_Error_extrapolated'] =  Sweep_info_table['Bridge_Error_extrapolated'].astype(str)
             Sweep_info_table = Sweep_info_table.replace(np.nan, 'NaN')
+            Sweep_info_table = Sweep_info_table.loc[:,['Sweep',
+                                                       'Protocol_id',
+                                                       'Trace_id',
+                                                       'Sampling_Rate_Hz',
+                                                       'Stim_start_s', 
+                                                       'Stim_end_s', 
+                                                       'Bridge_Error_GOhms', 
+                                                       'Bridge_Error_extrapolated', 
+                                                       'Input_Resistance_GOhms',
+                                                       'Time_constant_ms',
+                                                       'Stim_amp_pA', 
+                                                       'Stim_SS_pA', 
+                                                       'Holding_current_pA',
+                                                       'Resting_potential_mV',
+                                                       'Holding_potential_mV',  
+                                                        'SS_potential_mV']]
+       
+       
+       
+            
             return Sweep_info_table
+        
+    # Update dict entries when buttons are pressed
+    @reactive.Effect
+    @reactive.event(input.trigger_sweep_info_table_saving)
+    def sweep_info_table_save_triggered():
+        d = saving_dict.get().copy()
+        d["Sweep_info_table"] = {
+                            "trigger": 1,
+                            "object": current_sweep_info_table_react_var.get(),
+                            "format": "csv"
+                        }
+        saving_dict.set(d)
     
     @output
     @render.data_frame
-    @reactive.event(input.Update_cell_btn,input.Sweep_selected,input.BE_correction)
-    def Sweep_spike_features_table():
-        if input.Cell_file_select() :
+    def Sweep_QC_table():
+        if input.Sweep_selected() :
+            cells_dict = get_cell_tables()
+            Sweep_QC_table = cells_dict['Sweep_QC_table']
+            current_sweep_QC_table_react_var.set(Sweep_QC_table)
+            # Convert boolean columns to string so they show up properly
+            
+            Sweep_QC_table_emoji = replace_bools_with_emojis(Sweep_QC_table)
+            
+            #Sweep_QC_table[bool_cols] = Sweep_QC_table[bool_cols].astype(str)
+            return Sweep_QC_table_emoji
+        
+    # Update dict entries when buttons are pressed
+    @reactive.Effect
+    @reactive.event(input.trigger_sweep_QC_table_saving)
+    def sweep_QC_table_save_triggered():
+        d = saving_dict.get().copy()
+        d["Sweep_QC_table"] = {
+                            "trigger": 1,
+                            "object": current_sweep_QC_table_react_var.get(),
+                            "format": "csv"
+                        }
+        saving_dict.set(d)
+        
+#%% Spike analysis
+
+    @reactive.Effect
+    @reactive.event(cell_file_correctly_opened, input.Sweep_selected, input.BE_correction, input.Superimpose_BE_Correction)
+    def preload_current_sweep_spike_plot_table():
+        if not cell_file_correctly_opened.get() or not input.Cell_file_select() or not input.Sweep_selected():
+            return
+        
+        task = "Sweep Spike analysis"
+        set_status(task, "⏳ Computing...")
+        
+        
+        try:
             cell_dict = get_cell_tables()
-            Full_SF_table = cell_dict['Full_SF_table']
-            spike_table = pd.DataFrame(Full_SF_table.loc[Full_SF_table['Sweep']==input.Sweep_selected(),"SF"].values[0])
-            return spike_table
+            
+            if cell_dict is None:
+                return  # Safety check
+            
+            current_sweep = input.Sweep_selected()
+            
+            
+            current_sweep_spike_plot, current_sweep_spike_table, current_TVC_table = get_sweep_spike_plot_table(cell_dict, 
+                                                                                             current_sweep, 
+                                                                                             input.BE_correction(),
+                                                                                             input.Superimpose_BE_Correction(),
+                                                                                             color_dict)
+            
+            sweep_spike_feature_plot_react_var.set(current_sweep_spike_plot)
+            sweep_spike_feature_table_react_var.set(current_sweep_spike_table)
+            current_sweep_TVC_table_react_var.set(current_TVC_table)
+            
+            set_status(task, f"{task} precomputed successfully ✅")
+            
+        except Exception as e:
+            # Extract last relevant frame from traceback
+            tb = traceback.extract_tb(e.__traceback__)
+            
+            short_msg = get_error_message(tb, e)
+            
+            # Build a simple error figure for the UI
+            error_fig = go.Figure()
+            error_fig.add_annotation(
+                text=f"⚠️ {short_msg}",
+                x=0.5, y=0.5, xref="paper", yref="paper",
+                showarrow=False, font=dict(color="red", size=16)
+            )
+            error_table = pd.DataFrame(columns = ['Feature', 'Spike_index'])
+            sweep_spike_feature_plot_react_var.set(error_fig)
+            sweep_spike_feature_table_react_var.set(error_table)
+            current_sweep_TVC_table_react_var.set(pd.DataFrame(columns = ['Time_s', 'Input_current_pA', "Membrane_potential_mV"]))
+            set_status(task, f"{task} failed ❌  {short_msg}")
+            
     
+    @output
+    @render.data_frame
+    def Sweep_spike_features_table():
+        current_sweep_spike_feature_table = sweep_spike_feature_table_react_var.get()
+        
+        return current_sweep_spike_feature_table
     
     @output
     @render_widget
-    @reactive.event(input.Update_cell_btn,input.Sweep_selected,input.BE_correction,input.Superimpose_BE_Correction)
     def Sweep_spike_plotly():
-        if input.Sweep_selected() :
-
-            cell_dict = get_cell_tables()
-            Full_TVC_table = cell_dict['Full_TVC_table']
-            Full_SF_table = cell_dict['Full_SF_table']
-            Sweep_info_table = cell_dict["Sweep_info_table"]
-            current_sweep = input.Sweep_selected()
-            BE = Sweep_info_table.loc[Sweep_info_table['Sweep'] == current_sweep,'Bridge_Error_GOhms'].values[0]
-            color_dict = {'Input_current_pA': 'black',
-                          'Membrane potential': 'black',
-                          'Membrane potential BE Corrected': "black",
-                          "Membrane potential original" : "red",
-                          'Threshold': "#a2c5fc",
-                          "Upstroke": "#0562f5",
-                          "Peak": "#2f0387",
-                          "Downstroke": "#9f02e8",
-                          "Fast_Trough": "#c248fa",
-                          "fAHP": "#d991fa",
-                          "Trough": '#fc3873',
-                          "Slow_Trough": "#96022e",
-                          "ADP":'#fc0366'
-                          }
-            
-            
-            current_TVC_table = ordifunc.get_filtered_TVC_table(Full_TVC_table,current_sweep)
-            
-            if input.BE_correction()==True: #if asked, correct the potential trace by the bridge error
-                Full_SF_dict_table = cell_dict['Full_SF_dict_table']
-                Full_SF_table = sp_an.create_Full_SF_table(Full_TVC_table, Full_SF_dict_table, cell_sweep_info_table = Sweep_info_table,BE_correct=True,)
-            else:
-                Full_SF_dict_table = cell_dict['Full_SF_dict_table']
-                Full_SF_table = sp_an.create_Full_SF_table(Full_TVC_table, Full_SF_dict_table, cell_sweep_info_table = Sweep_info_table,BE_correct=False,)
-            
-            fig = make_subplots(rows=2, cols=1, shared_xaxes=True, subplot_titles=("Membrane Potential plot", "Input Current plot"))
-            
-            if input.BE_correction() == True:
-                if not np.isnan(BE):
-                    current_TVC_table.loc[:,'Membrane_potential_mV'] = current_TVC_table.loc[:,'Membrane_potential_mV']-BE*current_TVC_table.loc[:,'Input_current_pA']
-                
-                fig.add_trace(go.Scatter(x=current_TVC_table['Time_s'], y=current_TVC_table['Membrane_potential_mV'], mode='lines', name='Membrane potential BE Corrected', line=dict(color=color_dict['Membrane potential'], width =1 )), row=1, col=1)
-                
-                if input.Superimpose_BE_Correction() == True:
-                    current_TVC_table_second = ordifunc.get_filtered_TVC_table(Full_TVC_table,current_sweep)
-                    fig.add_trace(go.Scatter(x=current_TVC_table_second['Time_s'], y=current_TVC_table_second['Membrane_potential_mV'], mode='lines', name='Membrane potential original', line=dict(color=color_dict['Membrane potential original'])), row=1, col=1)
-            
-            
-            else: 
-                fig.add_trace(go.Scatter(x=current_TVC_table['Time_s'], y=current_TVC_table['Membrane_potential_mV'], mode='lines', name='Membrane potential ', line=dict(color=color_dict['Membrane potential'], width =1)), row=1, col=1)
-            
-            
-            SF_table = Full_SF_table.loc[current_sweep, "SF"]
-            if not SF_table.empty:
-                print(SF_table['Feature'].unique())
-                for feature in SF_table['Feature'].unique():
-                    if feature in ["Spike_heigth", "Spike_width_at_half_heigth"]:
-                        continue
-                    subset = SF_table[SF_table['Feature'] == feature]
-                    
-                    fig.add_trace(go.Scatter(x=subset['Time_s'], y=subset['Membrane_potential_mV'], mode='markers', name=feature, marker=dict(color=color_dict[feature])), row=1, col=1)
-            
-            # Plot for Input_current_pA vs Time_s from TVC
-            fig.add_trace(go.Scatter(x=current_TVC_table['Time_s'], y=current_TVC_table['Input_current_pA'], mode='lines', name='Input current', line=dict(color=color_dict['Input_current_pA'] , width =1)), row=2, col=1)
-            
-            # Update layout
-            
-            fig.update_layout(
-            height=800,
-            showlegend=True,
-            title_text="TVC and SF Plots",
-            hovermode='x unified',  # Use 'x unified' to create a unified hover mode
-            )
-            fig.update_xaxes(title_text="Time_s", row=2, col=1)
-            fig.update_yaxes(title_text="Membrane_potential_mV", row=1, col=1)
-            fig.update_yaxes(title_text="Input_current_pA", row=2, col=1)
+        current_sweep_spike_feature_plot = sweep_spike_feature_plot_react_var.get()
+        
+        return current_sweep_spike_feature_plot
     
-     
-            return fig
-     
+    # Update dict entries when buttons are pressed
+    @reactive.Effect
+    @reactive.event(input.trigger_tvc_table_saving)
+    def TVC_table_save_triggered():
+        d = saving_dict.get().copy()
+        d["TVC_table"] = {
+                            "trigger": 1,
+                            "object": current_sweep_TVC_table_react_var.get(),
+                            "format": "csv"
+                        }
+        saving_dict.set(d)
+
+    @reactive.Effect
+    @reactive.event(input.trigger_spike_table_saving)
+    def Spike_table_saving_triggered():
+        d = saving_dict.get().copy()
+        d["Spike_feature_table"] = {
+                            "trigger": 1,
+                            "object": sweep_spike_feature_table_react_var.get(),
+                            "format": "csv"
+                        }
+        saving_dict.set(d)
+        
+    @reactive.Effect
+    @reactive.event(input.trigger_tvc_plot_saving)
+    def TVC_plot_saving_triggered():
+        d = saving_dict.get().copy()
+        d["Spike_feature_table"] = {
+                            "trigger": 1,
+                            "object": sweep_spike_feature_plot_react_var.get(),
+                            "format": "plot"
+                        }
+        saving_dict.set(d)
+
+#%% Spike phase 
+
     @reactive.Calc
     @reactive.event(input.Update_cell_btn)
-    def spike_analysis_plot():
-        if input.Cell_file_select() :
+    def get_phase_spike_traces():
+        if input.Cell_file_select() : # and cell_file_correctly_opened() :
             
             cell_dict = get_cell_tables()
+            if cell_dict is None:
+                return  # Safety check
             Full_TVC_table = cell_dict['Full_TVC_table']
             Full_SF_table = cell_dict['Full_SF_table']
             spike_trace_table = sp_an.get_cell_spikes_traces(Full_TVC_table, Full_SF_table)
 
             return spike_trace_table
-        
+
     @output
     @render_widget
     @reactive.event(input.Update_cell_btn, input.Sweep_selected)
     def Spike_phase_plane_plot():
-        spike_trace_table = spike_analysis_plot()
+        spike_trace_table = get_phase_spike_traces()
         
         # Filter table based on the selected Sweep
         sub_spike_super_position_table = spike_trace_table.loc[spike_trace_table['Sweep'] == input.Sweep_selected(), :]
@@ -2328,13 +3277,13 @@ def server(input: Inputs, output: Outputs, session: Session):
             legend_title='Spike Index'
         )
         return fig
-        return fig
+
     
     @output
     @render_widget
     @reactive.event(input.Update_cell_btn, input.Sweep_selected)
     def Spike_superposition_plot():
-        spike_trace_table = spike_analysis_plot()
+        spike_trace_table = get_phase_spike_traces()
         # Filter table based on the selected Sweep
         sub_spike_super_position_table = spike_trace_table.loc[spike_trace_table['Sweep'] == input.Sweep_selected(), :]
         discrete_colors = []
@@ -2416,782 +3365,933 @@ def server(input: Inputs, output: Outputs, session: Session):
             legend_title='Spike Index'
         )
         return fig
-        
+
+#%% Bridge Error Analysis
     
+             
+    @reactive.Effect
+    @reactive.event(cell_file_correctly_opened, input.Sweep_selected)
+    def preload_BE_analysis():
+        if not cell_file_correctly_opened.get() or not input.Cell_file_select() or not input.Sweep_selected():
+            return
+    
+        task = "Bridge Error Analysis"
+        set_status(task, f"⏳ Computing {task}...")
+        
+        try:
+            cell_dict = get_cell_tables()
+            current_sweep = input.Sweep_selected()
+            current_sweep_BE_plotly, current_sweep_BE_val, current_sweep_condition_table, BE_fit_values_dict = get_current_sweep_BE_analysis(cell_dict, current_sweep)
+            
+            BE_plot_react_var.set(current_sweep_BE_plotly)
+            BE_table_react_var.set(current_sweep_condition_table)
+            BE_value_react_var.set(current_sweep_BE_val)
+            BE_fit_values_dict_react_var.set(BE_fit_values_dict)
+            set_status(task, f"{task} precomputed successfully ✅")
+        except Exception as e:
+            
+            # Extract last relevant frame from traceback
+            tb = traceback.extract_tb(e.__traceback__)
+            
+            short_msg = get_error_message(tb, e)
+            
+            # Build a simple error figure for the UI
+            error_fig = go.Figure()
+            error_fig.add_annotation(
+                text=f"⚠️ {short_msg}",
+                x=0.5, y=0.5, xref="paper", yref="paper",
+                showarrow=False, font=dict(color="red", size=16)
+            )
+            error_table = pd.DataFrame(columns = ['Conditions', 'Met', 'Details'])
+            error_value = "Nan"
+            BE_plot_react_var.set(error_fig)
+            BE_table_react_var.set(error_table)
+            BE_value_react_var.set(error_value)
+            BE_fit_values_dict_react_var.set(error_table)
+            set_status(task, f"{task} failed ❌  {short_msg}")
+    
+    @output
+    @render_widget
+    def BE_plotly():
+        fig = BE_plot_react_var.get()
+        
+        return fig
+    
+    @reactive.Effect
+    @reactive.event(input.trigger_BE_plot_saving)
+    def BE_plot_save_triggered():
+        d = saving_dict.get().copy()
+        d["BE_plot"] = {
+                            "trigger": 1,
+                            "object": BE_plot_react_var.get(),
+                            "format": "plot"
+                        }
+        saving_dict.set(d)
+            
+    @output
+    @render.data_frame
+    def BE_fit_values_table():
+        current_BE_fit_values_table = BE_fit_values_dict_react_var.get()
+        
+        
+        return current_BE_fit_values_table
+    
+    @reactive.Effect
+    @reactive.event(input.trigger_BE_fit_table_saving)
+    def BE_fit_table_save_triggered():
+        d = saving_dict.get().copy()
+        d["BE_fit_table"] = {
+                            "trigger": 1,
+                            "object": BE_fit_values_dict_react_var.get(),
+                            "format": "csv"
+                        }
+        saving_dict.set(d)
     
     @output
     @render.data_frame
-    @reactive.event(input.Update_cell_btn,input.Sweep_selected,input.BE_correction)
-    def Spike_feature_table():
-        if input.Sweep_selected() :
-
-            cell_dict = get_cell_tables()
-            Full_TVC_table = cell_dict['Full_TVC_table']
-            Sweep_info_table = cell_dict['Sweep_info_table']
-            current_sweep = input.Sweep_selected()
-            
-            if input.use_custom_x_axis() == False:
-            
-                stim_start_time = Sweep_info_table.loc[Sweep_info_table['Sweep'] == current_sweep,'Stim_start_s'].values[0]
-                stim_start_time -= .1
-                stim_end_time = Sweep_info_table.loc[Sweep_info_table['Sweep'] == current_sweep,'Stim_end_s'].values[0]
-                stim_end_time += .1
-            else:
-                stim_start_time = input.SF_plot_min()
-                stim_end_time = input.SF_plot_max()
-                
-            
-            current_TVC_table= Full_TVC_table.loc[str(current_sweep),'TVC']
-            
-            current_TVC_table = current_TVC_table.loc[current_TVC_table['Time_s'] >= (stim_start_time), :]
-            current_TVC_table = current_TVC_table.loc[current_TVC_table['Time_s'] <= (stim_end_time), :]
-
-            
-            if input.BE_correction():
-                
-                BE = Sweep_info_table.loc[Sweep_info_table['Sweep'] == current_sweep,'Bridge_Error_GOhms'].values[0]
-                Full_SF_dict_table = cell_dict['Full_SF_dict_table']
-                original_TVC_table = current_TVC_table.copy()
-                original_TVC_table.loc[:,'Membrane_potential_mV'] -= BE*original_TVC_table.loc[:,'Input_current_pA']
-                Full_SF_table = sp_an.create_Full_SF_table(Full_TVC_table, Full_SF_dict_table, cell_sweep_info_table = Sweep_info_table, BE_correct=True)
-                current_SF_table = Full_SF_table.loc[str(current_sweep),'SF']
-                
-            else:
-                Full_SF_table = cell_dict['Full_SF_table']
-                current_SF_table = Full_SF_table.loc[str(current_sweep),'SF']
-
-            return current_SF_table
-    
-    
-    @reactive.Calc
-    @reactive.event(input.Update_cell_btn,input.Sweep_selected)
-    def get_sweep_linear_properties():
+    def BE_conditions_table():
+        current_BE_condition_table = BE_table_react_var.get()
+        current_BE_condition_table = current_BE_condition_table.rename(columns={'Met':"Condition Respected"})
+        current_BE_condition_table_emoji = replace_bools_with_emojis(current_BE_condition_table)
         
-        #Get sweep based linear properties and plots dicts
-        #Same code as in sw_an.get_sweep_linear_properties
-        if input.Sweep_selected() :
+        return current_BE_condition_table_emoji
+    
+    @reactive.Effect
+    @reactive.event(input.trigger_BE_conditions_table_saving)
+    def BE_fit_conditions_save_triggered():
+        d = saving_dict.get().copy()
+        d["BE_conditions_table"] = {
+                            "trigger": 1,
+                            "object": BE_table_react_var.get(),
+                            "format": "csv"
+                        }
+        saving_dict.set(d)
+        
+    @output
+    @render.text
+    def BE_value():
+        current_BE_value = BE_value_react_var.get()
+        return f"Estimated Bridge error = {round(current_BE_value, 5)} GOhms"
+            
+
+#%% Linear properties analysis
+
+    @reactive.Effect
+    @reactive.event(cell_file_correctly_opened, input.Sweep_selected)
+    def preload_linear_analysis():
+        if not cell_file_correctly_opened.get() or not input.Cell_file_select() or not input.Sweep_selected():
+            return
+        task = "Linear properties analysis"
+        set_status(task, f"⏳ Computing {task}...")
+        waiting_plot = go.Figure()
+        waiting_plot.add_annotation(
+            text="Waiting for plot to render",
+            x=0.5, y=0.5, xref="paper", yref="paper",
+            showarrow=False, font=dict(color="black", size=16)
+        )
+        current_sweep_time_cst_plot_react_var.set(waiting_plot)
+        current_sweep_IR_plot_react_var.set(waiting_plot)
+        
+        
+        try:
             cell_dict = get_cell_tables()
             current_sweep = input.Sweep_selected()
+            Do_linear_analysis_table, TC_plotly, R_in_plotly, properties_table, TC_table = get_sweep_linear_properties_analysis(cell_dict, current_sweep)
             
-            Full_TVC_table = cell_dict['Full_TVC_table']
-            Sweep_info_table = cell_dict['Sweep_info_table']
-            Stim_amp_pA = Sweep_info_table.loc[Sweep_info_table['Sweep'] == current_sweep,'Stim_amp_pA'].values[0]
-            time_cst = Sweep_info_table.loc[Sweep_info_table['Sweep'] == current_sweep,'Time_constant_ms'].values[0]
-            R_in = Sweep_info_table.loc[Sweep_info_table['Sweep'] == current_sweep,'Input_Resistance_GOhms'].values[0]
+            current_sweep_linear_analysis_conditions_table_react_var.set(Do_linear_analysis_table)
+            current_sweep_time_cst_plot_react_var.set(TC_plotly)
+            current_sweep_IR_plot_react_var.set(R_in_plotly)
+            current_sweep_properties_table_react_vat.set(properties_table)
+            current_sweep_time_cst_table_react_var.set(TC_table)
             
-            stim_start = Sweep_info_table.loc[Sweep_info_table['Sweep'] == current_sweep,'Stim_start_s'].values[0]
-            stim_end = Sweep_info_table.loc[Sweep_info_table['Sweep'] == current_sweep,'Stim_end_s'].values[0]
-            current_TVC_table= ordifunc.get_filtered_TVC_table(Full_TVC_table,current_sweep,do_filter=True,filter=5.,do_plot=False)
-        
-            BE = Sweep_info_table.loc[current_sweep, "Bridge_Error_GOhms"]
-            TVC_table = current_TVC_table.copy()
-            #rely on BE corrected trace
-            TVC_table.loc[:,'Membrane_potential_mV'] = TVC_table.loc[:,'Membrane_potential_mV']-BE*TVC_table.loc[:,'Input_current_pA']
+            set_status(task, f"{task} precomputed successfully ✅")
             
-        
-            TC_plot_dict = sw_an.fit_membrane_time_cst_new(TVC_table,stim_end+0.002,
-                                                              (stim_end+0.060),
-                                                              do_plot=True)
-            best_A,best_tau,SS_potential,RMSE = sw_an.fit_membrane_time_cst_new(TVC_table,stim_end+0.002,
-                                                                                             (stim_end+0.060),
-                                                                                             do_plot=False)
+        except Exception as e:
             
-            if np.isnan(best_tau):
-                transient_time = .030 
-            else:
-                transient_time = 3*best_tau
+            # Extract last relevant frame from traceback
+            tb = traceback.extract_tb(e.__traceback__)
             
-            R_in, resting_potential, holding_potential, SS_potential, R2 = sw_an.estimate_input_resistance_and_resting_potential(TVC_table, 
-                                                                                      stim_start, 
-                                                                                      stim_end, 
-                                                                                      best_tau, 
-                                                                                      do_plot = False)
+            short_msg = get_error_message(tb, e)
             
-            R_in_plot_dict = sw_an.estimate_input_resistance_and_resting_potential(TVC_table, 
-                                                               stim_start, 
-                                                               stim_end, 
-                                                               best_tau, 
-                                                               do_plot = True)
+            # Build a simple error figure for the UI
+            error_fig = go.Figure()
+            error_fig.add_annotation(
+                text=f"⚠️ {short_msg}",
+                x=0.5, y=0.5, xref="paper", yref="paper",
+                showarrow=False, font=dict(color="red", size=16)
+            )
+            error_table = pd.DataFrame(columns = ['', ''])
             
-            Do_linear_analysis, Do_linear_analysis_table = sw_an.check_criteria_linear_analysis(TVC_table,  stim_start, stim_end, transient_time, R2)
-            if Do_linear_analysis == False:
+            current_sweep_linear_analysis_conditions_table_react_var.set(error_table)
+            current_sweep_time_cst_plot_react_var.set(error_fig)
+            current_sweep_IR_plot_react_var.set(error_fig)
+            current_sweep_properties_table_react_vat.set(error_table)
+            current_sweep_time_cst_table_react_var.set(error_table)
             
-                
-                SS_potential = np.nan
-                resting_potential = np.nan
-                holding_potential = np.nan
-
-                R_in = np.nan
-                time_cst = np.nan
-            
-            linear_fit_table=pd.DataFrame([best_A,
-                                          best_tau,
-                                          SS_potential,
-                                          RMSE,
-                                          RMSE/best_A])
-            linear_fit_table.index=['A','tau', 'C','RMSE', "RMSE/A"]
-            
-            properties_table=pd.DataFrame([BE,
-                                          Stim_amp_pA,
-                                          holding_potential,
-                                          resting_potential,
-                                          R_in,
-                                          time_cst
-                                          ])
-            
-            properties_table.index= ['Bridge Error', "Stimulus amplitude pA",'Holding potential mV', 'Resting Potential mV', 'Input Resistance GOhms', 'Time constant ms']
-            
-            
-            return Do_linear_analysis_table, TC_plot_dict, R_in_plot_dict, properties_table, linear_fit_table
-           
-    
-    @output
-    @render.table
-    def Sweep_QC_table():
-        if input.Sweep_selected() :
-            cells_dict = get_cell_tables()
-            Sweep_QC_table = cells_dict['Sweep_QC_table']
-            return Sweep_QC_table
-            
-            
-    
-    @output
-    @render.table
-    def linear_properties_conditions_table():
-        if input.Sweep_selected() :
-            
-            
-            condition_table = get_sweep_linear_properties()[0]
-            condition_table_styled = condition_table.style.set_table_attributes('class="dataframe shiny-table table w-auto"').apply(highlight_late)
-            return condition_table_styled
-                
+            set_status(task, f"{task} failed ❌  {short_msg}")
             
             
 
-    @reactive.Calc
-    @reactive.event(input.Update_cell_btn, input.Firing_response_type)
-    def Time_based_analysis():
-        if input.Cell_file_select() :
+    @output
+    @render_widget
+    def cell_Input_Resitance_analysis():
+        
+        R_in_plot = current_sweep_IR_plot_react_var.get()
+        if R_in_plot is not None:
+            return R_in_plot
+        else:
+            return
+    
+    @reactive.Effect
+    @reactive.event(input.trigger_IR_plot_saving)
+    def IR_plot_saving_triggered():
+        d = saving_dict.get().copy()
+        d["IR_analysis_plot"] = {
+                            "trigger": 1,
+                            "object": current_sweep_IR_plot_react_var.get(),
+                            "format": "plot"
+                        }
+        saving_dict.set(d)
+        
+    @output
+    @render.data_frame
+    def IR_validation_condition_table():
+        
+        Do_linear_analysis_table = current_sweep_linear_analysis_conditions_table_react_var.get()
+        if Do_linear_analysis_table is not None:
+        
+            Do_linear_analysis_table_T = Do_linear_analysis_table.T
             
-            cell_dict=get_cell_tables()
+            
+            if "Condition Respected" in Do_linear_analysis_table_T.columns:
+                Do_linear_analysis_table_T["Condition Respected"] = Do_linear_analysis_table_T["Condition Respected"].replace({
+                    True: "✅",
+                    False: "❌"
+                })
+                
+            Do_linear_analysis_table = Do_linear_analysis_table_T.T
+            Do_linear_analysis_table.insert(0, "Condition", ["Measure", "Respected"])
+            return Do_linear_analysis_table
+        else:
+            return
+        
+    
+    @reactive.Effect
+    @reactive.event(input.trigger_IR_table_saving)
+    def IR_table_saving_triggered():
+        d = saving_dict.get().copy()
+        IR_analysis_table = current_sweep_linear_analysis_conditions_table_react_var.get().T
+
+        d["IR_analysis_table"] = {
+                            "trigger": 1,
+                            "object": IR_analysis_table.T,
+                            "format": "csv"
+                        }
+        saving_dict.set(d)
+    
+    @output
+    @render_widget
+    def cell_Time_cst_analysis():
+        
+        TC_plotly = current_sweep_time_cst_plot_react_var.get()
+        if TC_plotly is not None:
+            return TC_plotly
+        return
+    
+    @reactive.Effect
+    @reactive.event(input.trigger_TC_analysis_plot_saving)
+    def TC_plot_saving_triggered():
+        d = saving_dict.get().copy()
+        d["TC_analysis_plot"] = {
+                            "trigger": 1,
+                            "object": current_sweep_time_cst_plot_react_var.get(),
+                            "format": "plot"
+                        }
+        saving_dict.set(d)
+        
+
+
+    @output
+    @render.data_frame
+    def sweep_linear_properties_table():
+        properties_table = current_sweep_properties_table_react_vat.get()
+        if properties_table is not None:
+            properties_table_T = properties_table.T
+            for col in properties_table_T.columns:
+    
+                if np.issubdtype(properties_table_T[col].dtype, np.floating):
+                    properties_table_T[col] = np.round(properties_table_T[col], 2)
+            return properties_table_T
+        else:
+            return 
+        
+    @reactive.Effect
+    @reactive.event(input.trigger_linear_properties_table_saving)
+    def Linear_properties_saving_triggered():
+        d = saving_dict.get().copy()
+        properties_table = current_sweep_properties_table_react_vat.get()
+        if properties_table is not None:
+            properties_table_T = properties_table.T
+            for col in properties_table_T.columns:
+    
+                if np.issubdtype(properties_table_T[col].dtype, np.floating):
+                    properties_table_T[col] = np.round(properties_table_T[col], 2)
+        d["Linear_properties_table"] = {
+                            "trigger": 1,
+                            "object": properties_table_T,
+                            "format": "csv"
+                        }
+        saving_dict.set(d)
+        
+    @output
+    @render.data_frame
+    def TC_fit_table():
+        TC_table = current_sweep_time_cst_table_react_var.get()
+        if TC_table is not None:
+            TC_table = TC_table.T
+            for col in TC_table.columns:
+    
+                if np.issubdtype(TC_table[col].dtype, np.floating):
+                    TC_table[col] = np.round(TC_table[col], 2)
+            #TC_table = TC_table.style.set_table_attributes('class="dataframe shiny-table table w-auto"').apply(highlight_rmse_a)
+            return TC_table
+        
+        else:
+            return 
+    
+    @reactive.Effect
+    @reactive.event(input.trigger_TC_analysis_table_saving)
+    def TC_saving_triggered():
+        d = saving_dict.get().copy()
+
+
+
+        d["TC_analysis_table"] = {
+                            "trigger": 1,
+                            "object": current_sweep_time_cst_table_react_var.get().T,
+                            "format": "csv"
+                        }
+        saving_dict.set(d)
+        
+#%% I/O
+
+    @reactive.Effect
+    @reactive.event(cell_file_correctly_opened, input.Firing_response_type)
+    def update_IO_output_duration_list():
+        
+
+        if not cell_file_correctly_opened.get() or not input.Cell_file_select():
+            return
+        
+        cell_dict = get_cell_tables()
+
+        Cell_fit_table = cell_dict['Cell_fit_table']
+        Firing_type_cell_fit_table = Cell_fit_table.loc[(Cell_fit_table['Response_type']==input.Firing_response_type()) , : ]
+        response_duration_list = Firing_type_cell_fit_table.loc[:,"Output_Duration"].unique()
+        
+        ui.update_select(
+            "Firing_output_duration_new",
+            label="Select output duration",
+            choices=list(response_duration_list),
+        )
+        
+    
+    
+    @reactive.Effect
+    @reactive.event(cell_file_correctly_opened, input.Firing_response_type)
+    def preload_I_O_analysis():
+        if not cell_file_correctly_opened.get() or not input.Cell_file_select():
+            return
+    
+        task = "IO analysis"
+        set_status(task, f"⏳ Computing {task}...")
+    
+        try:
+            cell_dict = get_cell_tables()
             IO_figure = get_firing_analysis(cell_dict, input.Firing_response_type())
+            Time_based_IO_figure_react_var.set(IO_figure)
+            set_status(task, "IO analysis precomputed successfully ✅")
+        except Exception as e:
+            # Extract last relevant frame from traceback
+            tb = traceback.extract_tb(e.__traceback__)
             
-            return IO_figure
+            short_msg = get_error_message(tb, e)
+            
+            # Build a simple error figure for the UI
+            error_fig = go.Figure()
+            error_fig.add_annotation(
+                text=f"⚠️ {short_msg}",
+                x=0.5, y=0.5, xref="paper", yref="paper",
+                showarrow=False, font=dict(color="red", size=16)
+            )
+    
+            Time_based_IO_figure_react_var.set(error_fig)
+            set_status(task, f"IO analysis failed ❌  {short_msg}")
         
     @output
     @render_widget
-    @reactive.event(input.Update_cell_btn, input.Firing_response_type)
-    def Time_based_IO_plotly():
+    def IO_plotly():
+        """Display the precomputed IO plot."""
+        fig = Time_based_IO_figure_react_var.get()
+        return fig if fig is not None else go.Figure()  # or show an empty figure
+    
+    @reactive.Effect
+    @reactive.event(input.trigger_IO_plot_saving)
+    def IO_plot_saving_triggered():
+        d = saving_dict.get().copy()
+        d["IO_full_plot"] = {
+                            "trigger": 1,
+                            "object": Time_based_IO_figure_react_var.get(),
+                            "format": "plot"
+                        }
+        saving_dict.set(d)
+    
+    @reactive.Effect
+    @reactive.event(cell_file_correctly_opened, input.Firing_response_type)
+    def preload_IO_features_regression():
+        if not cell_file_correctly_opened.get() or not input.Cell_file_select():
+            return
         
-        return Time_based_analysis()
-    
-    
-    
-    @output
-    @render_widget
-    @reactive.event(input.Update_cell_btn, input.Firing_response_type)
-    def Gain_regression_plot():
-        if input.Cell_file_select() :
-            
-            cell_dict=get_cell_tables()
+        ### Gain
+        
+        task = "Gain regression IO plot"
+        set_status(task, f"⏳ Computing {task}...")
+        
+        try:
+            cell_dict = get_cell_tables()
             cell_feature_table  = cell_dict['Cell_feature_table']
             gain_table = cell_feature_table.loc[cell_feature_table['Response_type'] == input.Firing_response_type(),:]
-            sub_gain_table = gain_table.dropna(subset=['Gain'])
-            if sub_gain_table.shape[0]>1:
-                slope, intercept = fir_an.linear_fit(np.array(sub_gain_table.loc[:,'Output_Duration']),
-                                                     np.array(sub_gain_table.loc[:,'Gain']))
-                if input.Firing_response_type() == 'Time_based':
-                    extended_x_data = np.arange(0,np.nanmax(np.array(gain_table.loc[:,'Output_Duration'])),.001)
-                    x_legend = "Response duration ms"
-                else:
-                    extended_x_data = np.arange(0,np.nanmax(np.array(gain_table.loc[:,'Output_Duration'])),.1)
-                    if input.Firing_response_type() == "Index_based":
-                        x_legend = "Response duration spike index"
-                    else:
-                        x_legend = "Response duration spike interval"
-                original_data_x = np.array(gain_table['Output_Duration'])  # X values from your original data
-                original_data_y = np.array(gain_table['Gain'])             # Y values from your original data
-
-                linear_fit_y = slope * extended_x_data + intercept
-
-                # Create the plot
-                fig = go.Figure()
-                
-                # Add original data points
-                fig.add_trace(go.Scatter(
-                    x=original_data_x,
-                    y=original_data_y,
-                    mode='markers',
-                    marker=dict(symbol='circle', color='black'),
-                    name='Original Data'
-                ))
-                
-                # Add the linear fit line
-                fig.add_trace(go.Scatter(
-                    x=extended_x_data,  # Use the same x-values
-                    y=linear_fit_y,     # Linear fit y-values
-                    mode='lines',
-                    line=dict(color='red', dash='dash'),  # Dashed red line for linear fit
-                    name='Linear Fit'
-                ))
-                
-                # Update the layout
-                fig.update_layout(
-                    title='Gain Linear Fit',
-                    xaxis_title=x_legend,
-                    yaxis_title='Gain Hz/pA',
-                    width=250,
-                    height=400,
-                    showlegend=False
-                )
-                
-                # Show the plot
-
-                
+            gain_regression_plot, gain_regression_table = get_regression_plot(gain_table, 'Gain', input.Firing_response_type(), unit_dict)
+            Gain_regression_plotly_fig_react_var.set(gain_regression_plot)
+            Gain_regression_table_react_var.set(gain_regression_table)
+            set_status(task, f"{task} precomputed successfully ✅")
+        except Exception as e:
+            # Extract last relevant frame from traceback
+            tb = traceback.extract_tb(e.__traceback__)
             
-                return fig
-    
-    @output
-    @render.table
-    @reactive.event(input.Update_cell_btn, input.Firing_response_type)
-    def Gain_regression_table_time_based():
-        if input.Cell_file_select() :
+            short_msg = get_error_message(tb, e)
             
-            cell_dict=get_cell_tables()
-            cell_feature_table  = cell_dict['Cell_feature_table']
-            gain_table = cell_feature_table.loc[cell_feature_table['Response_type'] == "Time_based",:]
-            sub_gain_table = gain_table.dropna(subset=['Gain'])
-            if sub_gain_table.shape[0]>1:
-                slope, intercept = fir_an.linear_fit(np.array(sub_gain_table.loc[:,'Output_Duration']),
-                                                     np.array(sub_gain_table.loc[:,'Gain']))
-                
-                linear_fit_y = slope * np.array(sub_gain_table.loc[:,'Output_Duration']) + intercept
-                r2 = r2_score(sub_gain_table.loc[:,'Gain'], linear_fit_y)
-                
-                table = pd.DataFrame([slope, intercept, r2]).T
-                table.columns = ['Slope', 'Intercept', 'R2']
-                table = table.T
-                table = table.reset_index(drop=False)
-                table.columns = [" Gain", " "]
-                return table
+            # Build a simple error figure for the UI
+            error_fig = go.Figure()
+            error_fig.add_annotation(
+                text=f"⚠️ {short_msg}",
+                x=0.5, y=0.5, xref="paper", yref="paper",
+                showarrow=False, font=dict(color="red", size=16)
+            )
             
-    @output
-    @render_widget
-    @reactive.event(input.Update_cell_btn, input.Firing_response_type)
-    def Threshold_regression_plot():
-        if input.Cell_file_select() :
+            error_table = pd.DataFrame(columns = ['Gain', ''])
+            Gain_regression_plotly_fig_react_var.set(error_fig)
+            Gain_regression_table_react_var.set(error_table)
+            set_status(task, f"{task} failed ❌  {short_msg}")
             
-            cell_dict=get_cell_tables()
-            cell_feature_table  = cell_dict['Cell_feature_table']
-            Threshold_table = cell_feature_table.loc[cell_feature_table['Response_type'] == input.Firing_response_type(),:]
-            sub_Threshold_table = Threshold_table.dropna(subset=['Threshold'])
-            if sub_Threshold_table.shape[0]>1:
-                slope, intercept = fir_an.linear_fit(np.array(sub_Threshold_table.loc[:,'Output_Duration']),
-                                                     np.array(sub_Threshold_table.loc[:,'Threshold']))
-                if input.Firing_response_type() == 'Time_based':
-                    extended_x_data = np.arange(0,np.nanmax(np.array(Threshold_table.loc[:,'Output_Duration'])),.001)
-                    x_legend = "Response duration ms"
-                else:
-                    extended_x_data = np.arange(0,np.nanmax(np.array(Threshold_table.loc[:,'Output_Duration'])),.1)
-                    if input.Firing_response_type() == "Index_based":
-                        x_legend = "Response duration spike index"
-                    else:
-                        x_legend = "Response duration spike interval"
-                original_data_x = np.array(Threshold_table['Output_Duration'])  # X values from your original data
-                original_data_y = np.array(Threshold_table['Threshold'])             # Y values from your original data
-
-                linear_fit_y = slope * extended_x_data + intercept
-
-                # Create the plot
-                fig = go.Figure()
-                
-                # Add original data points
-                fig.add_trace(go.Scatter(
-                    x=original_data_x,
-                    y=original_data_y,
-                    mode='markers',
-                    marker=dict(symbol='circle', color='black'),
-                    name='Original Data'
-                ))
-                
-                # Add the linear fit line
-                fig.add_trace(go.Scatter(
-                    x=extended_x_data,  # Use the same x-values
-                    y=linear_fit_y,     # Linear fit y-values
-                    mode='lines',
-                    line=dict(color='red', dash='dash'),  # Dashed red line for linear fit
-                    name='Linear Fit'
-                ))
-                
-                # Update the layout
-                fig.update_layout(
-                    title='Threshold_table Linear Fit',
-                    xaxis_title=x_legend,
-                    yaxis_title='Threshold pA',
-                    width=250,
-                    height=400,
-                    showlegend=False
-                )
-                
-                # Show the plot
-
-                
-            
-                return fig
-    
-    
-    
-    
-    @output
-    @render.table
-    @reactive.event(input.Update_cell_btn, input.Firing_response_type)
-    def Threshold_regression_table():
-        if input.Cell_file_select() :
-            
-            cell_dict=get_cell_tables()
-            cell_feature_table  = cell_dict['Cell_feature_table']
-            Threshold_table = cell_feature_table.loc[cell_feature_table['Response_type'] == "Time_based",:]
-            sub_Threshold_table = Threshold_table.dropna(subset=['Threshold'])
-            if sub_Threshold_table.shape[0]>1:
-                slope, intercept = fir_an.linear_fit(np.array(sub_Threshold_table.loc[:,'Output_Duration']),
-                                                     np.array(sub_Threshold_table.loc[:,'Threshold']))
-                
-                
-
-                linear_fit_y = slope * np.array(sub_Threshold_table.loc[:,'Output_Duration']) + intercept
-
-                r2 = r2_score(sub_Threshold_table.loc[:,'Threshold'], linear_fit_y)
-                
-                table = pd.DataFrame([slope, intercept, r2]).T
-                table.columns = ['Slope', 'Intercept', 'R2']
-                table = table.T
-                table = table.reset_index(drop=False)
-                table.columns = ["Threshold", " "]
-                return table
-            
-    @output
-    @render_widget
-    @reactive.event(input.Update_cell_btn, input.Firing_response_type)
-    def Saturation_Frequency_regression_plot():
-        if input.Cell_file_select() :
-            
-            cell_dict=get_cell_tables()
-            cell_feature_table  = cell_dict['Cell_feature_table']
-            feature_table = cell_feature_table.loc[cell_feature_table['Response_type'] == input.Firing_response_type(),:]
-            sub_feature_table = feature_table.dropna(subset=['Saturation_Frequency'])
-            if sub_feature_table.shape[0]>1:
-                slope, intercept = fir_an.linear_fit(np.array(sub_feature_table.loc[:,'Output_Duration']),
-                                                     np.array(sub_feature_table.loc[:,'Saturation_Frequency']))
-                if input.Firing_response_type() == 'Time_based':
-                    extended_x_data = np.arange(0,np.nanmax(np.array(feature_table.loc[:,'Output_Duration'])),.001)
-                    x_legend = "Response duration ms"
-                else:
-                    extended_x_data = np.arange(0,np.nanmax(np.array(feature_table.loc[:,'Output_Duration'])),.1)
-                    if input.Firing_response_type() == "Index_based":
-                        x_legend = "Response duration spike index"
-                    else:
-                        x_legend = "Response duration spike interval"
-                original_data_x = np.array(feature_table['Output_Duration'])  # X values from your original data
-                original_data_y = np.array(feature_table['Saturation_Frequency'])             # Y values from your original data
-
-                linear_fit_y = slope * extended_x_data + intercept
-
-                # Create the plot
-                fig = go.Figure()
-                
-                # Add original data points
-                fig.add_trace(go.Scatter(
-                    x=original_data_x,
-                    y=original_data_y,
-                    mode='markers',
-                    marker=dict(symbol='circle', color='black'),
-                    name='Original Data'
-                ))
-                
-                # Add the linear fit line
-                fig.add_trace(go.Scatter(
-                    x=extended_x_data,  # Use the same x-values
-                    y=linear_fit_y,     # Linear fit y-values
-                    mode='lines',
-                    line=dict(color='red', dash='dash'),  # Dashed red line for linear fit
-                    name='Linear Fit'
-                ))
-                
-                # Update the layout
-                fig.update_layout(
-                    title='Saturation frequency Linear Fit',
-                    xaxis_title=x_legend,
-                    yaxis_title='Saturation Frequency Hz',
-                    width=250,
-                    height=400,
-                    showlegend=False
-                )
-                
-                # Show the plot
-
-                
-            
-                return fig
-    
-    @output
-    @render.table
-    @reactive.event(input.Update_cell_btn, input.Firing_response_type)
-    def Saturation_Frequency_regression():
-        if input.Cell_file_select() :
-            
-            cell_dict=get_cell_tables()
-            cell_feature_table  = cell_dict['Cell_feature_table']
-            
-            feature_table = cell_feature_table.loc[cell_feature_table['Response_type'] == "Time_based",:]
-            sub_feature_table = feature_table.dropna(subset=['Saturation_Frequency'])
-            if sub_feature_table.shape[0]>1:
-                slope, intercept = fir_an.linear_fit(np.array(sub_feature_table.loc[:,'Output_Duration']),
-                                                     np.array(sub_feature_table.loc[:,'Saturation_Frequency']))
-
-                linear_fit_y = slope * np.array(sub_feature_table.loc[:,'Output_Duration']) + intercept
-
-                r2 = r2_score(sub_feature_table.loc[:,'Saturation_Frequency'], linear_fit_y)
-                
-                table = pd.DataFrame([slope, intercept, r2]).T
-                table.columns = ['Slope', 'Intercept', 'R2']
-                table = table.T
-                table = table.reset_index(drop=False)
-                table.columns = ["Saturation_Frequency", " "]
-                return table
-            
-    @output
-    @render_widget
-    @reactive.event(input.Update_cell_btn, input.Firing_response_type)
-    def Saturation_Stimulus_regression_plot():
-        if input.Cell_file_select() :
-            
-            cell_dict=get_cell_tables()
-            cell_feature_table  = cell_dict['Cell_feature_table']
-            feature_table = cell_feature_table.loc[cell_feature_table['Response_type'] == input.Firing_response_type(),:]
-            sub_feature_table = feature_table.dropna(subset=['Saturation_Stimulus'])
-            if sub_feature_table.shape[0]>1:
-                slope, intercept = fir_an.linear_fit(np.array(sub_feature_table.loc[:,'Output_Duration']),
-                                                     np.array(sub_feature_table.loc[:,'Saturation_Stimulus']))
-                if input.Firing_response_type() == 'Time_based':
-                    extended_x_data = np.arange(0,np.nanmax(np.array(feature_table.loc[:,'Output_Duration'])),.001)
-                    x_legend = "Response duration ms"
-                else:
-                    extended_x_data = np.arange(0,np.nanmax(np.array(feature_table.loc[:,'Output_Duration'])),.1)
-                    if input.Firing_response_type() == "Index_based":
-                        x_legend = "Response duration spike index"
-                    else:
-                        x_legend = "Response duration spike interval"
-                original_data_x = np.array(feature_table['Output_Duration'])  # X values from your original data
-                original_data_y = np.array(feature_table['Saturation_Stimulus'])             # Y values from your original data
-
-                linear_fit_y = slope * extended_x_data + intercept
-
-                # Create the plot
-                fig = go.Figure()
-                
-                # Add original data points
-                fig.add_trace(go.Scatter(
-                    x=original_data_x,
-                    y=original_data_y,
-                    mode='markers',
-                    marker=dict(symbol='circle', color='black'),
-                    name='Original Data'
-                ))
-                
-                # Add the linear fit line
-                fig.add_trace(go.Scatter(
-                    x=extended_x_data,  # Use the same x-values
-                    y=linear_fit_y,     # Linear fit y-values
-                    mode='lines',
-                    line=dict(color='red', dash='dash'),  # Dashed red line for linear fit
-                    name='Linear Fit'
-                ))
-                
-                # Update the layout
-                fig.update_layout(
-                    title='Saturation frequency Linear Fit',
-                    xaxis_title=x_legend,
-                    yaxis_title='Saturation Stimulus pA',
-                    width=250,
-                    height=400,
-                    showlegend=False
-                )
-                
-                # Show the plot
-                return fig
-    
-    @output
-    @render.table
-    @reactive.event(input.Update_cell_btn, input.Firing_response_type)
-    def Saturation_Stimulus_regression():
-        if input.Cell_file_select() :
-            
-            cell_dict=get_cell_tables()
-            cell_feature_table  = cell_dict['Cell_feature_table']
-            
-            feature_table = cell_feature_table.loc[cell_feature_table['Response_type'] == "Time_based",:]
-            sub_feature_table = feature_table.dropna(subset=['Saturation_Stimulus'])
-            if sub_feature_table.shape[0]>1:
-                slope, intercept = fir_an.linear_fit(np.array(sub_feature_table.loc[:,'Output_Duration']),
-                                                     np.array(sub_feature_table.loc[:,'Saturation_Stimulus']))
-
-                linear_fit_y = slope * np.array(sub_feature_table.loc[:,'Output_Duration']) + intercept
-
-                r2 = r2_score(sub_feature_table.loc[:,'Saturation_Stimulus'], linear_fit_y)
-                
-                table = pd.DataFrame([slope, intercept, r2]).T
-                table.columns = ['Slope', 'Intercept', 'R2']
-                table = table.T
-                table = table.reset_index(drop=False)
-                table.columns = ["Saturation_Stimulus", " "]
-                return table
-    
-    @output
-    @render_widget
-    @reactive.event(input.Update_cell_btn, input.Firing_response_type)
-    def Response_Failure_Stimulus_regression_plot():
-        if input.Cell_file_select() :
-            
-            cell_dict=get_cell_tables()
-            cell_feature_table  = cell_dict['Cell_feature_table']
-            feature_table = cell_feature_table.loc[cell_feature_table['Response_type'] == input.Firing_response_type(),:]
-            sub_feature_table = feature_table.dropna(subset=['Response_Fail_Stimulus'])
-            if sub_feature_table.shape[0]>1:
-                slope, intercept = fir_an.linear_fit(np.array(sub_feature_table.loc[:,'Output_Duration']),
-                                                     np.array(sub_feature_table.loc[:,'Response_Fail_Stimulus']))
-                if input.Firing_response_type() == 'Time_based':
-                    extended_x_data = np.arange(0,np.nanmax(np.array(feature_table.loc[:,'Output_Duration'])),.001)
-                    x_legend = "Response duration ms"
-                else:
-                    extended_x_data = np.arange(0,np.nanmax(np.array(feature_table.loc[:,'Output_Duration'])),.1)
-                    if input.Firing_response_type() == "Index_based":
-                        x_legend = "Response duration spike index"
-                    else:
-                        x_legend = "Response duration spike interval"
-                original_data_x = np.array(feature_table['Output_Duration'])  # X values from your original data
-                original_data_y = np.array(feature_table['Response_Fail_Stimulus'])             # Y values from your original data
-
-                linear_fit_y = slope * extended_x_data + intercept
-
-                # Create the plot
-                fig = go.Figure()
-                
-                # Add original data points
-                fig.add_trace(go.Scatter(
-                    x=original_data_x,
-                    y=original_data_y,
-                    mode='markers',
-                    marker=dict(symbol='circle', color='black'),
-                    name='Original Data'
-                ))
-                
-                # Add the linear fit line
-                fig.add_trace(go.Scatter(
-                    x=extended_x_data,  # Use the same x-values
-                    y=linear_fit_y,     # Linear fit y-values
-                    mode='lines',
-                    line=dict(color='red', dash='dash'),  # Dashed red line for linear fit
-                    name='Linear Fit'
-                ))
-                
-                # Update the layout
-                fig.update_layout(
-                    title='Saturation frequency Linear Fit',
-                    xaxis_title=x_legend,
-                    yaxis_title='Response Failure Stimulus pA',
-                    width=250,
-                    height=400,
-                    showlegend=False
-                )
-                
-                # Show the plot
-
-                
-            
-                return fig
-    
-    @output
-    @render.table
-    @reactive.event(input.Update_cell_btn, input.Firing_response_type)
-    def Response_Fail_Stimulus_regression():
-        if input.Cell_file_select() :
-            
-            cell_dict=get_cell_tables()
-            cell_feature_table  = cell_dict['Cell_feature_table']
-            
-            feature_table = cell_feature_table.loc[cell_feature_table['Response_type'] == "Time_based",:]
-            sub_feature_table = feature_table.dropna(subset=['Response_Fail_Stimulus'])
-            if sub_feature_table.shape[0]>1:
-                slope, intercept = fir_an.linear_fit(np.array(sub_feature_table.loc[:,'Output_Duration']),
-                                                     np.array(sub_feature_table.loc[:,'Response_Fail_Stimulus']))
-
-                linear_fit_y = slope * np.array(sub_feature_table.loc[:,'Output_Duration']) + intercept
-
-                r2 = r2_score(sub_feature_table.loc[:,'Response_Fail_Stimulus'], linear_fit_y)
-                
-                table = pd.DataFrame([slope, intercept, r2]).T
-                table.columns = ['Slope', 'Intercept', 'R2']
-                table = table.T
-                table = table.reset_index(drop=False)
-                table.columns = ["Response_Fail_Stimulus", " "]
-                return table
-            
-    @output
-    @render_widget
-    @reactive.event(input.Update_cell_btn, input.Firing_response_type)
-    def Response_Failure_Frequency_regression_plot():
-        if input.Cell_file_select() :
-            
-            cell_dict=get_cell_tables()
-            cell_feature_table  = cell_dict['Cell_feature_table']
-            feature_table = cell_feature_table.loc[cell_feature_table['Response_type'] == input.Firing_response_type(),:]
-            sub_feature_table = feature_table.dropna(subset=['Response_Fail_Frequency'])
-            if sub_feature_table.shape[0]>1:
-                slope, intercept = fir_an.linear_fit(np.array(sub_feature_table.loc[:,'Output_Duration']),
-                                                     np.array(sub_feature_table.loc[:,'Response_Fail_Frequency']))
-                if input.Firing_response_type() == 'Time_based':
-                    extended_x_data = np.arange(0,np.nanmax(np.array(feature_table.loc[:,'Output_Duration'])),.001)
-                    x_legend = "Response duration ms"
-                else:
-                    extended_x_data = np.arange(0,np.nanmax(np.array(feature_table.loc[:,'Output_Duration'])),.1)
-                    if input.Firing_response_type() == "Index_based":
-                        x_legend = "Response duration spike index"
-                    else:
-                        x_legend = "Response duration spike interval"
-                original_data_x = np.array(feature_table['Output_Duration'])  # X values from your original data
-                original_data_y = np.array(feature_table['Response_Fail_Frequency'])             # Y values from your original data
-
-                linear_fit_y = slope * extended_x_data + intercept
-
-                # Create the plot
-                fig = go.Figure()
-                
-                # Add original data points
-                fig.add_trace(go.Scatter(
-                    x=original_data_x,
-                    y=original_data_y,
-                    mode='markers',
-                    marker=dict(symbol='circle', color='black'),
-                    name='Original Data'
-                ))
-                
-                # Add the linear fit line
-                fig.add_trace(go.Scatter(
-                    x=extended_x_data,  # Use the same x-values
-                    y=linear_fit_y,     # Linear fit y-values
-                    mode='lines',
-                    line=dict(color='red', dash='dash'),  # Dashed red line for linear fit
-                    name='Linear Fit'
-                ))
-                
-                # Update the layout
-                fig.update_layout(
-                    title='Saturation frequency Linear Fit',
-                    xaxis_title=x_legend,
-                    yaxis_title='Response Failure Frequency Hz',
-                    width=250,
-                    height=400,
-                    showlegend=False
-                )
-                
-                # Show the plot
-
-                
-            
-                return fig
-    
-    @output
-    @render.table
-    @reactive.event(input.Update_cell_btn, input.Firing_response_type)
-    def Response_Fail_Frequency_regression():
-        if input.Cell_file_select() :
-            
-            cell_dict=get_cell_tables()
-            cell_feature_table  = cell_dict['Cell_feature_table']
-            
-            feature_table = cell_feature_table.loc[cell_feature_table['Response_type'] == "Time_based",:]
-            sub_feature_table = feature_table.dropna(subset=['Response_Fail_Frequency'])
-            if sub_feature_table.shape[0]>1:
-                slope, intercept = fir_an.linear_fit(np.array(sub_feature_table.loc[:,'Output_Duration']),
-                                                     np.array(sub_feature_table.loc[:,'Response_Fail_Frequency']))
-
-                linear_fit_y = slope * np.array(sub_feature_table.loc[:,'Output_Duration']) + intercept
-
-                r2 = r2_score(sub_feature_table.loc[:,'Response_Fail_Frequency'], linear_fit_y)
-                
-                table = pd.DataFrame([slope, intercept, r2]).T
-                table.columns = ['Slope', 'Intercept', 'R2']
-                table = table.T
-                table = table.reset_index(drop=False)
-                table.columns = ["Response_Fail_Frequency", " "]
-                return table
-    
-    
-    
-    # @reactive.Effect
-    # def _():
-    #     if input.Cell_file_select() :
-            
-    #         cell_dict=get_cell_tables()
-    #         cell_fit_table = cell_dict['Cell_fit_table']
-    #         response_type = input.Firing_response_type_detail()
-    #         sub_cell_fit_table = cell_fit_table.loc[cell_fit_table['Response_type'] == response_type,:]
-    #         sub_cell_fit_table = sub_cell_fit_table[sub_cell_fit_table["I_O_obs"].isin(['Hill','Hill-Sigmoid'])]
-    #         time_output_duration = list(sub_cell_fit_table.loc[:,'Output_Duration'].unique())
-    
-    
-    #         ui.update_select(
-    #             "Firing_output_duration_detail",
-    #             label="Select output duration",
-    #             choices=time_output_duration,
-                
-    #         )
-    #         ui.update_select(
-    #             "Firing_output_duration_new",
-    #             label="Select output duration",
-    #             choices=time_output_duration,
-                
-    #         )
-            
-    
-    # @reactive.Calc
-    # @reactive.event(input.Update_cell_btn, input.Firing_response_type_detail,input.Firing_output_duration_detail)
-    # def get_IO_fit_plots():
+        ### Threshold
+        feature = 'Threshold'
+        task = f"{feature} regression "
+        set_status(task, f"⏳ Computing {task}...")
         
-    #     if input.Firing_output_duration_detail() :
-    #         cell_dict=get_cell_tables()
-    #         Full_SF_table = cell_dict['Full_SF_table']
-    #         Sweep_info_table = cell_dict['Sweep_info_table']
-    #         sweep_QC_table = cell_dict['Sweep_QC_table']
+        try:
+            cell_dict = get_cell_tables()
+            cell_feature_table  = cell_dict['Cell_feature_table']
+            current_threshold_table = cell_feature_table.loc[cell_feature_table['Response_type'] == input.Firing_response_type(),:]
+            current_threshold_regression_plot, current_threshold_regression_table = get_regression_plot(current_threshold_table, feature, input.Firing_response_type(), unit_dict)
+            Threshold_regression_plotly_fig_react_var.set(current_threshold_regression_plot)
             
-            
-            
-    #         response_type = input.Firing_response_type_detail()
-    #         response_duration = input.Firing_output_duration_detail()
-            
-    #         stim_freq_table = fir_an.get_stim_freq_table(Full_SF_table, Sweep_info_table,sweep_QC_table,float(response_duration), response_based=response_type)
+            Threshold_regression_table_react_var.set(current_threshold_regression_table)
 
-    #         plot_lists = fir_an.fit_IO_relationship(
-    #             stim_freq_table, do_plot=True)
+            set_status(task, f"{task} precomputed successfully ✅")
+        except Exception as e:
+            # Extract last relevant frame from traceback
+            tb = traceback.extract_tb(e.__traceback__)
             
-    #         return plot_lists
-    
-                
-    
-    # def render_plot_func(plot_list, j):
-    #     @render.plot
-    #     def f():
-    #         plot = plot_list[j]
+            short_msg = get_error_message(tb, e)
             
-    #         return plot
-    #     return f
+            # Build a simple error figure for the UI
+            error_fig = go.Figure()
+            error_fig.add_annotation(
+                text=f"⚠️ {short_msg}",
+                x=0.5, y=0.5, xref="paper", yref="paper",
+                showarrow=False, font=dict(color="red", size=16)
+            )
+            
+            error_table = pd.DataFrame(columns = [feature, ''])
+            Threshold_regression_plotly_fig_react_var.set(error_fig)
+            Threshold_regression_table_react_var.set(error_table)
+            set_status(task, f"{task} failed ❌  {short_msg}")
+            
+        ### Saturation_Frequency
+        feature = 'Saturation_Frequency'
+        task = f"{feature} regression "
+        set_status(task, f"⏳ Computing {task}...")
+        
+        try:
+            cell_dict = get_cell_tables()
+            cell_feature_table  = cell_dict['Cell_feature_table']
+            current_Saturation_Frequency_table = cell_feature_table.loc[cell_feature_table['Response_type'] == input.Firing_response_type(),:]
+            current_Saturation_Frequency_regression_plot, current_Saturation_Frequency_regression_table = get_regression_plot(current_Saturation_Frequency_table, feature, input.Firing_response_type(), unit_dict)
+            Saturation_Frequency_regression_plotly_fig_react_var.set(current_Saturation_Frequency_regression_plot)
+            Saturation_Frequency_regression_table_react_var.set(current_Saturation_Frequency_regression_table)
+            set_status(task, f"{task} precomputed successfully ✅")
+        except Exception as e:
+            # Extract last relevant frame from traceback
+            tb = traceback.extract_tb(e.__traceback__)
+            
+            short_msg = get_error_message(tb, e)
+            
+            # Build a simple error figure for the UI
+            error_fig = go.Figure()
+            error_fig.add_annotation(
+                text=f"⚠️ {short_msg}",
+                x=0.5, y=0.5, xref="paper", yref="paper",
+                showarrow=False, font=dict(color="red", size=16)
+            )
+            
+            error_table = pd.DataFrame(columns = [feature, ''])
+            Saturation_Frequency_regression_plotly_fig_react_var.set(error_fig)
+            Saturation_Frequency_regression_table_react_var.set(error_table)
+            set_status(task, f"{task} failed ❌  {short_msg}")
+            
+        ### Saturation_Stimulus
+        feature = 'Saturation_Stimulus'
+        task = f"{feature} regression "
+        set_status(task, f"⏳ Computing {task}...")
+        
+        try:
+            cell_dict = get_cell_tables()
+            cell_feature_table  = cell_dict['Cell_feature_table']
+            Saturation_Stimulus_table = cell_feature_table.loc[cell_feature_table['Response_type'] == input.Firing_response_type(),:]
+            Saturation_Stimulus_regression_plot, Saturation_Stimulus_regression_table = get_regression_plot(Saturation_Stimulus_table, feature, input.Firing_response_type(), unit_dict)
+            Saturation_Stimulus_regression_plotly_fig_react_var.set(Saturation_Stimulus_regression_plot)
+            Saturation_Stimulus_regression_table_react_var.set(Saturation_Stimulus_regression_table)
+            set_status(task, f"{task} precomputed successfully ✅")
+        except Exception as e:
+            # Extract last relevant frame from traceback
+            tb = traceback.extract_tb(e.__traceback__)
+            
+            short_msg = get_error_message(tb, e)
+            
+            # Build a simple error figure for the UI
+            error_fig = go.Figure()
+            error_fig.add_annotation(
+                text=f"⚠️ {short_msg}",
+                x=0.5, y=0.5, xref="paper", yref="paper",
+                showarrow=False, font=dict(color="red", size=16)
+            )
+            
+            error_table = pd.DataFrame(columns = [feature, ''])
+            Saturation_Stimulus_regression_plotly_fig_react_var.set(error_fig)
+            Saturation_Stimulus_regression_table_react_var.set(error_table)
+            set_status(task, f"{task} failed ❌  {short_msg}")
+            
+        ### Response_Failure
+        feature = 'Response_Fail_Frequency'
+        task = f"{feature} regression "
+        set_status(task, f"⏳ Computing {task}...")
+        
+        try:
+            cell_dict = get_cell_tables()
+            cell_feature_table  = cell_dict['Cell_feature_table']
+            Response_Failure_Frequency_table = cell_feature_table.loc[cell_feature_table['Response_type'] == input.Firing_response_type(),:]
+            Response_Failure_Frequency_regression_plot, Response_Failure_Frequency_regression_table = get_regression_plot(Response_Failure_Frequency_table, feature, input.Firing_response_type(), unit_dict)
+            Response_Failure_Frequency_regression_plotly_fig_react_var.set(Response_Failure_Frequency_regression_plot)
+            Response_Failure_Frequency_regression_table_react_var.set(Response_Failure_Frequency_regression_table)
+            set_status(task, f"{task} precomputed successfully ✅")
+        
+        except Exception as e:
+            
+            # Extract last relevant frame from traceback
+            tb = traceback.extract_tb(e.__traceback__)
+            
+            short_msg = get_error_message(tb, e)
+            
+            # Build a simple error figure for the UI
+            error_fig = go.Figure()
+            error_fig.add_annotation(
+                text=f"⚠️ {short_msg}",
+                x=0.5, y=0.5, xref="paper", yref="paper",
+                showarrow=False, font=dict(color="red", size=16)
+            )
+            
+            error_table = pd.DataFrame(columns = [feature, ''])
+            Response_Failure_Frequency_regression_plotly_fig_react_var.set(error_fig)
+            Response_Failure_Frequency_regression_table_react_var.set(error_table)
+            set_status(task, f"{task} failed ❌  {short_msg}")
+            
+        ### Response_Failure
+        feature = 'Response_Fail_Stimulus'
+        task = f"{feature} regression "
+        set_status(task, f"⏳ Computing {task}...")
+        
+        try:
+            cell_dict = get_cell_tables()
+            cell_feature_table  = cell_dict['Cell_feature_table']
+            Response_Failure_Stimulus_table = cell_feature_table.loc[cell_feature_table['Response_type'] == input.Firing_response_type(),:]
+            Response_Failure_Stimulus_regression_plot, Response_Failure_Stimulus_regression_table = get_regression_plot(Response_Failure_Stimulus_table, feature, input.Firing_response_type(), unit_dict)
+            Response_Failure_Stimulus_regression_plotly_fig_react_var.set(Response_Failure_Stimulus_regression_plot)
+            Response_Failure_Stimulus_regression_table_react_var.set(Response_Failure_Stimulus_regression_table)
+            set_status(task, f"{task} precomputed successfully ✅")
+        except Exception as e:
+            # Extract last relevant frame from traceback
+            tb = traceback.extract_tb(e.__traceback__)
+            
+            short_msg = get_error_message(tb, e)
+            
+            # Build a simple error figure for the UI
+            error_fig = go.Figure()
+            error_fig.add_annotation(
+                text=f"⚠️ {short_msg}",
+                x=0.5, y=0.5, xref="paper", yref="paper",
+                showarrow=False, font=dict(color="red", size=16)
+            )
+            
+            error_table = pd.DataFrame(columns = [feature, ''])
+            Response_Failure_Stimulus_regression_plotly_fig_react_var.set(error_fig)
+            Response_Failure_Stimulus_regression_table_react_var.set(error_table)
+            set_status(task, f"{task} failed ❌  {short_msg}")
     
     @output
-    @render.table
+    @render_widget
+    def Gain_regression_plot():
+        """Display the precomputed Gain regression  plot."""
+        fig = Gain_regression_plotly_fig_react_var.get()
+        return fig if fig is not None else go.Figure()  # or show an empty figure
+    
+    @reactive.Effect
+    @reactive.event(input.trigger_gain_regression_plot_saving)
+    def gain_regression_plot_saving_triggered():
+        d = saving_dict.get().copy()
+        d["Gain_regression_plot"] = {
+                            "trigger": 1,
+                            "object": Gain_regression_plotly_fig_react_var.get(),
+                            "format": "plot"
+                        }
+        saving_dict.set(d)
+    
+    @output
+    @render.data_frame
+    def Gain_regression_table():
+        """Display the precomputed Gain regression  table."""
+        table = Gain_regression_table_react_var.get()
+        return table if table is not None else pd.DataFrame(['Gain', ''])  # or show an empty figure
+    
+    @reactive.Effect
+    @reactive.event(input.trigger_gain_regression_table_saving)
+    def gain_regression_table_saving_triggered():
+        d = saving_dict.get().copy()
+        d["Gain_regression_table"] = {
+                            "trigger": 1,
+                            "object": Gain_regression_table_react_var.get(),
+                            "format": "csv"
+                        }
+        saving_dict.set(d)
+    
+    @output
+    @render_widget
+    def Threshold_regression_plot():
+        """Display the precomputed Threshold regression  plot."""
+        fig = Threshold_regression_plotly_fig_react_var.get()
+        return fig if fig is not None else go.Figure()  # or show an empty figure
+    
+    @reactive.Effect
+    @reactive.event(input.trigger_threshold_regression_plot_saving)
+    def threshold_regression_plot_saving_triggered():
+        d = saving_dict.get().copy()
+        d["Threshold_regression_plot"] = {
+                            "trigger": 1,
+                            "object": Threshold_regression_plotly_fig_react_var.get(),
+                            "format": "plot"
+                        }
+        saving_dict.set(d)
+    
+    @output
+    @render.data_frame
+    def Threshold_regression_table():
+        """Display the precomputed Threshold regression  table."""
+        table = Threshold_regression_table_react_var.get()
+        return table if table is not None else pd.DataFrame(['Threshold', ''])  # or show an empty figure
+    
+    @reactive.Effect
+    @reactive.event(input.trigger_threshold_regression_table_saving)
+    def threshold_regression_table_saving_triggered():
+        d = saving_dict.get().copy()
+        d["Threshold_regression_table"] = {
+                            "trigger": 1,
+                            "object": Threshold_regression_table_react_var.get(),
+                            "format": "csv"
+                        }
+        saving_dict.set(d)
+    
+    @output
+    @render_widget
+    def Saturation_Frequency_regression_plot():
+        """Display the precomputed Saturation_Frequency regression  plot."""
+        fig = Saturation_Frequency_regression_plotly_fig_react_var.get()
+        return fig if fig is not None else go.Figure()  # or show an empty figure
+    
+    @reactive.Effect
+    @reactive.event(input.trigger_sat_freq_regression_plot_saving)
+    def Saturation_frequency_regression_plot_saving_triggered():
+        d = saving_dict.get().copy()
+        d["Sat_freq_regression_plot"] = {
+                            "trigger": 1,
+                            "object": Saturation_Frequency_regression_plotly_fig_react_var.get(),
+                            "format": "plot"
+                        }
+        saving_dict.set(d)
+    
+    @output
+    @render.data_frame
+    def Saturation_Frequency_regression_table():
+        """Display the precomputed Saturation_Frequency regression  table."""
+        table = Saturation_Frequency_regression_table_react_var.get()
+        return table if table is not None else pd.DataFrame(['Saturation_Frequency', ''])  # or show an empty figure
+    
+    @reactive.Effect
+    @reactive.event(input.trigger_sat_freq_regression_table_saving)
+    def Saturation_frequency_regression_table_saving_triggered():
+        d = saving_dict.get().copy()
+        d["Sat_freq_regression_table"] = {
+                            "trigger": 1,
+                            "object": Saturation_Frequency_regression_table_react_var.get(),
+                            "format": "csv"
+                        }
+        saving_dict.set(d)
+    
+    @output
+    @render_widget
+    def Saturation_Stimulus_regression_plot():
+        """Display the precomputed Saturation_Stimulus regression  plot."""
+        fig = Saturation_Stimulus_regression_plotly_fig_react_var.get()
+        return fig if fig is not None else go.Figure()  # or show an empty figure
+    
+    @reactive.Effect
+    @reactive.event(input.trigger_sat_stim_regression_plot_saving)
+    def Saturation_stimulus_regression_plot_saving_triggered():
+        d = saving_dict.get().copy()
+        d["Sat_stim_regression_plot"] = {
+                            "trigger": 1,
+                            "object": Saturation_Stimulus_regression_plotly_fig_react_var.get(),
+                            "format": "plot"
+                        }
+        saving_dict.set(d)
+    
+    @output
+    @render.data_frame
+    def Saturation_Stimulus_regression_table():
+        """Display the precomputed Saturation_Stimulus regression  table."""
+        table = Saturation_Stimulus_regression_table_react_var.get()
+        return table if table is not None else pd.DataFrame(['Saturation_Stimulus', ''])  # or show an empty figure
+    
+    @reactive.Effect
+    @reactive.event(input.trigger_sat_stim_regression_table_saving)
+    def Saturation_stimulus_regression_table_saving_triggered():
+        d = saving_dict.get().copy()
+        d["Sat_stim_regression_table"] = {
+                            "trigger": 1,
+                            "object": Saturation_Stimulus_regression_table_react_var.get(),
+                            "format": "csv"
+                        }
+        saving_dict.set(d)
+    
+    @output
+    @render_widget
+    def Response_Failure_Frequency_regression_plot():
+        """Display the precomputed Response_Failure_Frequency regression  plot."""
+        fig = Response_Failure_Frequency_regression_plotly_fig_react_var.get()
+        return fig if fig is not None else go.Figure()  # or show an empty figure
+    
+    @reactive.Effect
+    @reactive.event(input.trigger_Response_fail_freq_regression_plot_saving)
+    def Response_fail_freq_regression_plot_saving_triggered():
+        d = saving_dict.get().copy()
+        d["Resp_fail_freq_regression_plot"] = {
+                            "trigger": 1,
+                            "object": Response_Failure_Frequency_regression_plotly_fig_react_var.get(),
+                            "format": "plot"
+                        }
+        saving_dict.set(d)
+    
+    @output
+    @render.data_frame
+    def Response_Failure_Frequency_regression_table():
+        """Display the precomputed Response_Failure_Frequency regression  table."""
+        table = Response_Failure_Frequency_regression_table_react_var.get()
+        return table if table is not None else pd.DataFrame(['Response_Failure_Frequency', ''])  # or show an empty figure
+    
+    @reactive.Effect
+    @reactive.event(input.trigger_Response_fail_freq_regression_table_saving)
+    def Response_fail_freq_regression_table_saving_triggered():
+        d = saving_dict.get().copy()
+        d["Resp_fail_freq_regression_table"] = {
+                            "trigger": 1,
+                            "object": Response_Failure_Frequency_regression_table_react_var.get(),
+                            "format": "csv"
+                        }
+        saving_dict.set(d)
+    
+    
+    
+    @output
+    @render_widget
+    def Response_Failure_Stimulus_regression_plot():
+        """Display the precomputed Response_Failure_Stimulus regression  plot."""
+        fig = Response_Failure_Stimulus_regression_plotly_fig_react_var.get()
+        return fig if fig is not None else go.Figure()  # or show an empty figure
+    
+    @reactive.Effect
+    @reactive.event(input.trigger_Response_fail_stim_regression_plot_saving)
+    def Response_fail_stim_regression_plot_saving_triggered():
+        d = saving_dict.get().copy()
+        d["Resp_fail_stim_regression_plot"] = {
+                            "trigger": 1,
+                            "object": Response_Failure_Stimulus_regression_plotly_fig_react_var.get(),
+                            "format": "plot"
+                        }
+        saving_dict.set(d)
+    
+    @output
+    @render.data_frame
+    def Response_Failure_Stimulus_regression_table():
+        """Display the precomputed Response_Failure_Stimulus regression  table."""
+        table = Response_Failure_Stimulus_regression_table_react_var.get()
+        return table if table is not None else pd.DataFrame(['Response_Failure_Stimulus', ''])  # or show an empty figure
+    
+    @reactive.Effect
+    @reactive.event(input.trigger_Response_fail_stim_regression_table_saving)
+    def Response_fail_stim_regression_table_saving_triggered():
+        d = saving_dict.get().copy()
+        d["Resp_fail_stim_regression_table"] = {
+                            "trigger": 1,
+                            "object": Response_Failure_Stimulus_regression_plotly_fig_react_var.get(),
+                            "format": "csv"
+                        }
+        saving_dict.set(d)
+    
+  
+#%% IO detailed fit
+
+    @reactive.Effect
+    @reactive.event(cell_file_correctly_opened, input.Firing_output_duration_new, input.Firing_response_type)
+    def preload_IO_fit_analysis():
+        
+        if not cell_file_correctly_opened.get() or not input.Cell_file_select():
+            return
+    
+        task = "IO fit analysis"
+        set_status(task, f"⏳ Computing {task}...")
+        
+        try:
+            cell_dict = get_cell_tables()
+            
+            IO_detailed_plotly, IO_detailed_matplotlib, stim_freq_table, pruning_obs, condition_table = get_detailed_IO_fit(cell_dict, input.Firing_response_type(), input.Firing_output_duration_new())
+            IO_fit_plotly_react_var.set(IO_detailed_plotly)
+            IO_fit_matplotlib_react_var.set(IO_detailed_matplotlib)
+            
+            stim_freq_table_react_var.set(stim_freq_table)
+            pruning_obs_react_var.set(pruning_obs)
+            IO_condition_table_react_var.set(condition_table)
+            
+            set_status(task, f"{task} precomputed successfully ✅")
+        except Exception as e:
+            # Extract last relevant frame from traceback
+            tb = traceback.extract_tb(e.__traceback__)
+            
+            short_msg = get_error_message(tb, e)
+            
+            # Build a simple error figure for the UI
+            error_fig = go.Figure()
+            error_fig.add_annotation(
+                text=f"⚠️ {short_msg}",
+                x=0.5, y=0.5, xref="paper", yref="paper",
+                showarrow=False, font=dict(color="red", size=16)
+            )
+            error_table = pd.DataFrame(columns = ['Sweep', 'Stim_amp_pA', 'Passed_QC' "Frequency_Hz"])
+            
+            IO_fit_plotly_react_var.set(error_fig)
+            stim_freq_table_react_var.set(error_table)
+            error_table = pd.DataFrame(columns = ['Condition', "Obs"])
+            pruning_obs_react_var.set(error_table)
+            IO_condition_table_react_var.set(error_table)
+            set_status(task, f"{task} failed ❌  {short_msg}")
+
+
+    @output
+    @render_widget
+    def IO_analysis_plotly():
+        current_IO_fit_plotly =  IO_fit_plotly_react_var.get()
+        return current_IO_fit_plotly if current_IO_fit_plotly is not None else go.Figure() 
+    
+    @reactive.Effect
+    @reactive.event(input.trigger_IO_detailed_plot_saving)
+    def IO_fit_plot_saving_triggered():
+        d = saving_dict.get().copy()
+        
+        d["IO_fit_plot"] = {
+                            "trigger": 1,
+                            "object": IO_fit_matplotlib_react_var.get(),
+                            "format": "plot"
+                        }
+        
+        saving_dict.set(d)
+    
+    @output
+    @render.data_frame
+    def IO_fit_stim_freq_table():
+        current_IO_fit_stim_freq_table =  stim_freq_table_react_var.get()
+        for col in current_IO_fit_stim_freq_table.columns:
+            if col not in ['Sweep', "Stim_amp_pA", "Frequency_Hz"]:
+                current_IO_fit_stim_freq_table[col] = current_IO_fit_stim_freq_table[col].astype(bool)
+            elif col in ["Stim_amp_pA", "Frequency_Hz"]:
+                current_IO_fit_stim_freq_table.loc[:, col] = np.round(current_IO_fit_stim_freq_table.loc[:,col], 2)
+
+        # Desired first columns
+        first_cols = ["Sweep", "Stim_amp_pA", "Frequency_Hz", "Passed_QC"]
+        
+        # All other columns in current order
+        other_cols = [c for c in current_IO_fit_stim_freq_table.columns if c not in first_cols]
+        
+        # Reorder
+
+        current_IO_fit_stim_freq_table = current_IO_fit_stim_freq_table[first_cols + other_cols]
+        current_IO_fit_stim_freq_table_emoji = replace_bools_with_emojis(current_IO_fit_stim_freq_table)
+        return current_IO_fit_stim_freq_table_emoji if current_IO_fit_stim_freq_table_emoji is not None else pd.DataFrame()
+    
+    @reactive.Effect
+    @reactive.event(input.trigger_stim_freq_table_saving)
+    def stim_freq_table_saving_triggered():
+        d = saving_dict.get().copy()
+        d["Stim_freq_table"] = {
+                            "trigger": 1,
+                            "object": stim_freq_table_react_var.get(),
+                            "format": "csv"
+                        }
+        saving_dict.set(d)
+        
+    @output
+    @render.data_frame
+    def IO_fit_pruning_obs_table():
+        current_IO_fit_pruning_obs_table =  IO_condition_table_react_var.get()
+        current_IO_fit_pruning_obs_table_emoji = replace_bools_with_emojis(current_IO_fit_pruning_obs_table)
+        
+        return current_IO_fit_pruning_obs_table_emoji if current_IO_fit_pruning_obs_table_emoji is not None else pd.DataFrame()
+    
+    
+    @reactive.Effect
+    @reactive.event(input.trigger_IO_fit_conditions_table_saving)
+    def IO_fit_pruning_obs_table_saving_triggered():
+        d = saving_dict.get().copy()
+        d["IO_conditions_table"] = {
+                            "trigger": 1,
+                            "object": IO_condition_table_react_var.get(),
+                            "format": "csv"
+                        }
+        saving_dict.set(d)
+    
+    @output
+    @render.data_frame
     @reactive.event(input.Update_cell_btn, input.Plot_new, input.Firing_output_duration_new)
-    def IO_fit_parameter_table():
-        if input.JSON_config_file() and input.Cell_file_select() and input.Plot_new():
-            print('JIFIferifjoreijforlRIIFIR')
+    def IO_fit_parameter_table_old():
+        if input.JSON_config_file() and input.Cell_file_select() and input.Plot_new() :#and cell_file_correctly_opened() :
+
             cell_dict=get_cell_tables()
             Cell_feature_table = cell_dict['Cell_feature_table']
             Full_SF_table = cell_dict['Full_SF_table']
@@ -3210,7 +4310,7 @@ def server(input: Inputs, output: Outputs, session: Session):
             Test_Gain = Cell_feature_table.loc[(Cell_feature_table['Response_type']==Firing_response_type)&
                                                             (Cell_feature_table['Output_Duration']==Firing_output_duration_new), 'Gain'].values[0]
             
-            
+            print('FKRFORFRKFOFR')
             if not np.isnan(Test_Gain):
                 stim_freq_table = fir_an.get_stim_freq_table(Full_SF_table, Sweep_info_table, Sweep_QC_table, Firing_output_duration_new, Firing_response_type)
                 parameters_table = fir_an.get_IO_features(stim_freq_table, Firing_response_type, Firing_output_duration_new, do_plot=False)[-1]
@@ -3224,546 +4324,194 @@ def server(input: Inputs, output: Outputs, session: Session):
                 elif "-IO_fit" in input.Plot_new():
                     sub_parameter_table = parameters_table
             return sub_parameter_table
-                    
-
-    # @output
-    # @render.ui
-    # def plots():
-    #     if input.Firing_output_duration_detail() :
-    #         plot_output_list = []
-    #         plot_list = get_IO_fit_plots()
-    #         counter = 0
-    #         for i in plot_list:
-
-    #             plotname = f"IO_details_plot_{counter}"
-    
-    #             plot_output_list.append(ui.output_plot(plotname))
-    #             output(render_plot_func(plot_list, i), id=plotname)
-    #             counter += 1
-    #         return ui.TagList(plot_output_list)
         
-    
+#%% Adaptation
+
+    @reactive.Effect
+    @reactive.event(cell_file_correctly_opened, input.Adaptation_feature_to_display)
+    def preload_Adaptation_analysis():
         
+        if not cell_file_correctly_opened.get() or not input.Cell_file_select():
+            return
     
+        task = "Adaptation analysis"
+        set_status(task, f"⏳ Computing {task}...")
+        
+        try:
+            cell_dict = get_cell_tables()
+            current_adaptation_plotly, current_adaptation_plot, current_adaptation_table = get_adaptation_analysis(cell_dict, input.Adaptation_feature_to_display())
+            Adaptation_figure_plotly_react_var.set(current_adaptation_plotly)
+            Adaptation_figure_plot_react_var.set(current_adaptation_plotly)
+            Adaptation_table_react_var.set(current_adaptation_table)
+            
+            set_status(task, f"{task} precomputed successfully ✅")
+        except Exception as e:
+            # Extract last relevant frame from traceback
+            tb = traceback.extract_tb(e.__traceback__)
+            
+            short_msg = get_error_message(tb, e)
+            
+            # Build a simple error figure for the UI
+            error_fig = go.Figure()
+            error_fig.add_annotation(
+                text=f"⚠️ {short_msg}",
+                x=0.5, y=0.5, xref="paper", yref="paper",
+                showarrow=False, font=dict(color="red", size=16)
+            )
+            error_table = pd.DataFrame(columns = ['Feature', "M", "C", "Adpataion index"])
+            Adaptation_figure_plotly_react_var.set(error_fig)
+            Adaptation_figure_plot_react_var.set(error_fig)
+            Adaptation_table_react_var.set(error_table)
+            set_status(task, f"{task} failed ❌  {short_msg}")
+            
     @output
     @render_widget
-    @reactive.event(input.Update_cell_btn, input.Plot_new, input.Firing_output_duration_new)
-    def IO_analysis_plotly():
-        if input.JSON_config_file() and input.Cell_file_select() and input.Plot_new():
-
-            cell_dict=get_cell_tables()
-            Cell_feature_table = cell_dict['Cell_feature_table']
-            Full_SF_table = cell_dict['Full_SF_table']
-            Sweep_info_table = cell_dict['Sweep_info_table']
-            Sweep_QC_table = cell_dict['Sweep_QC_table']
-            
-            Firing_response_type = input.Firing_response_type()
-            if Firing_response_type=='Time_based':
-                
-                Firing_output_duration_new = float(input.Firing_output_duration_new())
-            else:
-                Firing_output_duration_new = int(float(input.Firing_output_duration_new()))
-            
-
-            
-            Test_Gain = Cell_feature_table.loc[(Cell_feature_table['Response_type']==Firing_response_type)&
-                                                            (Cell_feature_table['Output_Duration']==Firing_output_duration_new), 'Gain'].values[0]
-            
-            
-            if not np.isnan(Test_Gain):
-                stim_freq_table = fir_an.get_stim_freq_table(Full_SF_table, Sweep_info_table, Sweep_QC_table, Firing_output_duration_new, Firing_response_type)
-                plot_list = fir_an.get_IO_features(stim_freq_table, Firing_response_type, Firing_output_duration_new, do_plot=True)
-                
-                # )
-                if "-Polynomial_fit" in input.Plot_new():
-                
-                    polynomial_fit_dict = plot_list["1-Polynomial_fit"]
-                    # Extract data from dictionary
-                    original_data_table = polynomial_fit_dict["original_data_table"]
-                    trimmed_stimulus_frequency_table = polynomial_fit_dict['trimmed_stimulus_frequency_table']
-                    trimmed_3rd_poly_table = polynomial_fit_dict['trimmed_3rd_poly_table']
-                    color_shape_dict = polynomial_fit_dict['color_shape_dict']
-    
-                    
-                    passed_QC_table = original_data_table.loc[original_data_table['Passed_QC']==True,:]
-                    failed_QC_table = original_data_table.loc[original_data_table['Passed_QC']==False,:]
-                    
-                    fig = go.Figure()
-                    
-    
-                    fig.add_trace(go.Scatter(
-                        x=passed_QC_table['Stim_amp_pA'],
-                        y=passed_QC_table['Frequency_Hz'],
-                        mode='markers',
-                        marker=dict(symbol='circle'),
-                        name='Original',
-                        text=original_data_table['Sweep'],
-                        hoverinfo='text+x+y'
-                    ))
-                    fig.add_trace(go.Scatter(
-                        x=failed_QC_table['Stim_amp_pA'],
-                        y=failed_QC_table['Frequency_Hz'],
-                        mode='markers',
-                        marker=dict(symbol='circle-x-open'),
-                        name='Failed QC Data',
-                        text=original_data_table['Sweep'],
-                        hoverinfo='text+x+y'
-                    ))
-                    
-                    # Add trimmed stimulus frequency points
-                    fig.add_trace(go.Scatter(
-                        x=trimmed_stimulus_frequency_table['Stim_amp_pA'],
-                        y=trimmed_stimulus_frequency_table['Frequency_Hz'],
-                        mode='markers',
-                        marker=dict(color='black'),
-                        name='Trimmed Stimulus Frequency',
-                        text=trimmed_stimulus_frequency_table['Passed_QC']
-                    ))
-                    
-                    # Add polynomial fit lines
-                    for legend in trimmed_3rd_poly_table['Legend'].unique():
-                        legend_data = trimmed_3rd_poly_table[trimmed_3rd_poly_table['Legend'] == legend]
-                        fig.add_trace(go.Scatter(
-                            x=legend_data['Stim_amp_pA'],
-                            y=legend_data['Frequency_Hz'],
-                            mode='lines',
-                            name=legend,
-                            line=dict(color=color_shape_dict[legend])
-                        ))
-                    
-                    # Update layout
-                    fig.update_layout(
-                        title='3rd order polynomial fit to trimmed_data',
-                        xaxis_title='Stim_amp_pA',
-                        yaxis_title='Frequency_Hz',
-                        legend_title='Legend',
-                        width=1000,  # Set plot width
-                        height=800,# Set plot height
-                        template="plotly_white"
-                    )
-                elif '-Final_Hill_Sigmoid_Fit' in input.Plot_new():
-                    
-                    Hill_Sigmoid_fit_dict = plot_list['2-Final_Hill_Sigmoid_Fit']
-                    # Extract data from the dictionary
-                    original_data_table = Hill_Sigmoid_fit_dict['original_data_table']
-                    Initial_Fit_table = Hill_Sigmoid_fit_dict['Initial_Fit_table']
-                    Final_fit_table = Hill_Sigmoid_fit_dict['Final_fit_table']
-                    color_shape_dict = Hill_Sigmoid_fit_dict['color_shape_dict']
-                    
-                    # Create the plotly figure
-                    passed_QC_table = original_data_table.loc[original_data_table['Passed_QC']==True,:]
-                    failed_QC_table = original_data_table.loc[original_data_table['Passed_QC']==False,:]
-                    
-                    fig = go.Figure()
-                    
-
-                    fig.add_trace(go.Scatter(
-                        x=passed_QC_table['Stim_amp_pA'],
-                        y=passed_QC_table['Frequency_Hz'],
-                        mode='markers',
-                        marker=dict(symbol='circle',color='black'),
-                        name='Original Data',
-                        text=original_data_table['Sweep'],
-                        hoverinfo='text+x+y'
-                    ))
-                    fig.add_trace(go.Scatter(
-                        x=failed_QC_table['Stim_amp_pA'],
-                        y=failed_QC_table['Frequency_Hz'],
-                        mode='markers',
-                        marker=dict(symbol='circle-x-open', color='grey'),
-                        name='Failed QC Data',
-                        text=original_data_table['Sweep'],
-                        hoverinfo='text+x+y'
-                    ))
-                    
-                    fig.add_trace(go.Scatter(x=Initial_Fit_table['Stim_amp_pA'], 
-                                             y=Initial_Fit_table['Frequency_Hz'], 
-                                             mode='lines', 
-                                             name="Initial conditions", 
-                                             line=dict(color=color_shape_dict["Initial conditions"])))
-                    
-                    fig.add_trace(go.Scatter(x=Final_fit_table['Stim_amp_pA'], 
-                                             y=Final_fit_table['Frequency_Hz'], 
-                                             mode='lines', 
-                                             name="Final Fit", 
-                                             line=dict(color=color_shape_dict["Final_Hill_Sigmoid_fit"])))
-                    
-                    
-                    # Update the layout
-                    fig.update_layout(
-                        title='Final_Hill_Sigmoid_Fit',
-                        xaxis_title='Stim_amp_pA',
-                        yaxis_title='Frequency_Hz',
-                        legend_title='Legend',
-                        width=1000,  # Set plot width
-                        height=800,# Set plot height
-                        template="plotly_white"
-                    )
-                    
-                elif "-IO_fit" in input.Plot_new():
-                    
-                    feature_plot_dict = plot_list['3-IO_fit']
-                    
-                    # Extract data from the dictionary
-                    original_data_table = feature_plot_dict['original_data_table']
-                    model_table = feature_plot_dict['model_table']
-                    gain_table = feature_plot_dict['gain_table']
-                    Intercept = feature_plot_dict['intercept']
-                    Gain = feature_plot_dict['Gain']
-                    Threshold_table = feature_plot_dict['Threshold']
-                    stimulus_for_max_freq = feature_plot_dict["stimulus_for_maximum_frequency"]
-                    
-                    # Create the plotly figure
-                    passed_QC_table = original_data_table.loc[original_data_table['Passed_QC']==True,:]
-                    failed_QC_table = original_data_table.loc[original_data_table['Passed_QC']==False,:]
-                   
-                    fig = go.Figure()
-                    
-
-                    fig.add_trace(go.Scatter(
-                        x=passed_QC_table['Stim_amp_pA'],
-                        y=passed_QC_table['Frequency_Hz'],
-                        mode='markers',
-                        marker=dict(symbol='circle',color='black'),
-                        name='Original Data',
-                        text=original_data_table['Sweep'],
-                        hoverinfo='text+x+y'
-                    ))
-                    
-                    
-                    fig.add_trace(go.Scatter(
-                        x=failed_QC_table['Stim_amp_pA'],
-                        y=failed_QC_table['Frequency_Hz'],
-                        mode='markers',
-                        marker=dict(symbol='circle-x-open', color='grey'),
-                        name='Failed QC Data',
-                        text=original_data_table['Sweep'],
-                        hoverinfo='text+x+y'
-                    ))
-                    
-                    # Add model line
-                    fig.add_trace(go.Scatter(x=model_table['Stim_amp_pA'], 
-                                              y=model_table['Frequency_Hz'], 
-                                              mode='lines', 
-                                              name='IO Fit',
-                                              line=dict(color='blue')))
-                    
-                    # Add model line
-                    fig.add_trace(go.Scatter(x=gain_table['Stim_amp_pA'], 
-                                              y=gain_table['Frequency_Hz'], 
-                                              mode='lines', 
-                                              name='Linear IO portion',
-                                              line=dict(color='green', 
-                                                        width = 6,
-                                                        dash='dot')))
-                    
-                    # Add the abline (slope and intercept)
-                    x_range = np.arange(original_data_table['Stim_amp_pA'].min(), stimulus_for_max_freq, 1)
-
-                    fig.add_trace(go.Scatter(x=x_range, 
-                                              y=Intercept + Gain * x_range, 
-                                              mode='lines', 
-                                              name='Linear Fit', 
-                                              line=dict(color='red', dash='dash')))
-                    
-                    # Add the Threshold points
-                    fig.add_trace(go.Scatter(x=Threshold_table["Stim_amp_pA"], 
-                                              y=Threshold_table["Frequency_Hz"], 
-                                              mode='markers', 
-                                              name='Threshold', 
-                                              marker=dict(color='green', size = 10, symbol='cross')))
-                    
-                    # Add Saturation points if not NaN
-                    if "Saturation" in feature_plot_dict.keys():
-                        Saturation_table = feature_plot_dict['Saturation']
-                        fig.add_trace(go.Scatter(x=Saturation_table['Stim_amp_pA'], 
-                                                  y=Saturation_table['Frequency_Hz'], 
-                                                  mode='markers', 
-                                                  name='Saturation', 
-                                                  marker=dict(color='green', size = 10, symbol='triangle-up')))
-                    
-                    if "Response_Failure" in feature_plot_dict.keys():
-                        response_failure_table = feature_plot_dict['Response_Failure']
-                        fig.add_trace(go.Scatter(x=response_failure_table['Stim_amp_pA'], 
-                                                  y=response_failure_table['Frequency_Hz'], 
-                                                  mode='markers', 
-                                                  name='Response Failure', 
-                                                  marker=dict(color='red', size = 10, symbol='x')))
-                    
-                    fig.update_layout(
-                        title='I/O fit',
-                        xaxis_title='Stim_amp_pA',
-                        yaxis_title='Frequency_Hz',
-                        width=1000,  # Set plot width
-                        height=800,# Set plot height
-                        template="plotly_white"
-                    )
-                
-
-
-                # Add a custom button to download the figure as a PDF
-                
-                return fig
-            
-            
-    
-    @output
-    @render_widget
-    @reactive.event(input.Update_cell_btn, input.Sweep_selected)
-    def BE_plotly():
-        if input.Cell_file_select() :
-            cell_dict=get_cell_tables()
-            Full_TVC_table = cell_dict['Full_TVC_table']
-            sweep_info_table = cell_dict['Sweep_info_table']
-            
-            if np.isnan(sweep_info_table.loc[sweep_info_table['Sweep']==input.Sweep_selected(),"Bridge_Error_GOhms"].values[0]) == False:
-                TVC_table = Full_TVC_table.loc[input.Sweep_selected(),"TVC"]
-                
-                stim_amp = sweep_info_table.loc[sweep_info_table['Sweep']==input.Sweep_selected(),"Stim_SS_pA"].values[0]
-                Stim_start_s = sweep_info_table.loc[sweep_info_table['Sweep']==input.Sweep_selected(),"Stim_start_s"].values[0]
-                Stim_end_s = sweep_info_table.loc[sweep_info_table['Sweep']==input.Sweep_selected(),"Stim_end_s"].values[0]
-                dict_plot = sw_an.estimate_bridge_error(TVC_table, stim_amp, Stim_start_s, Stim_end_s,do_plot=True)
-
-                TVC_table = dict_plot['TVC_table']
-                #min_time_fit
-                min_time_current = dict_plot['min_time_current']
-                max_time_current = dict_plot['max_time_current']
-                    # Transition_time
-                actual_transition_time = dict_plot["Transition_time"]
-                alpha_FT = dict_plot['alpha_FT']
-                T_FT = dict_plot['T_FT']
-                delta_t_ref_first_positive = dict_plot["delta_t_ref_first_positive"]
-                T_ref_cell = dict_plot['T_ref_cell']
-                
-                
-                # Membrane_potential_mV
-                V_fit_table = dict_plot["Membrane_potential_mV"]["V_fit_table"]
-                V_table_to_fit = dict_plot['Membrane_potential_mV']['V_table_to_fit']
-                V_pre_transition_time = dict_plot["Membrane_potential_mV"]["Voltage_Pre_transition"]
-                V_post_transition_time = dict_plot["Membrane_potential_mV"]["Voltage_Post_transition"]
-                
-                # Input_current_pA
-                pre_T_current = dict_plot["Input_current_pA"]["pre_T_current"]
-                post_T_current = dict_plot["Input_current_pA"]["post_T_current"]
-                current_trace_table = dict_plot["Input_current_pA"]["current_trace_table"]
-                
-                # Create subplots
-                fig = make_subplots(rows=5, cols=1,  shared_xaxes=True, subplot_titles=("Membrane Potential plot", "Input Current plot", "Membrane potential first derivative 1kHz LPF","Membrane potential second derivative 5kHz LPF","Input current derivative 5kHz LPF"), vertical_spacing=0.03)
-                
-                # Membrane potential plot
-                fig.add_trace(go.Scatter(x=TVC_table['Time_s'], y=TVC_table['Membrane_potential_mV'], mode='lines', name='Cell_trace', line=dict(color='black', width =1 )), row=1, col=1)
-                fig.add_trace(go.Scatter(x=TVC_table['Time_s'], y=TVC_table['Membrane_potential_0_5_LPF'], mode='lines', name="Membrane_potential_0_5_LPF", line=dict(color='#680396')), row=1, col=1)
-                fig.add_trace(go.Scatter(x=[actual_transition_time], y=[V_pre_transition_time], mode='markers', name='Voltage_Pre_transition', marker=dict(color='#fa2df0', size=8)), row=1, col=1)
-                fig.add_trace(go.Scatter(x=[actual_transition_time], y=[V_post_transition_time], mode='markers', name='Voltage_Post_transition', marker=dict(color='#9e2102', size=8)), row=1, col=1)
-                fig.add_trace(go.Scatter(x=V_table_to_fit['Time_s'], y=V_table_to_fit['Membrane_potential_mV'], mode='lines', line=dict(color='#c96a04'), name='Fitted membrane potential'), row=1, col=1)
-                fig.add_trace(go.Scatter(x=V_fit_table['Time_s'], y=V_fit_table['Membrane_potential_mV'], mode='lines', line=dict(color='orange'), name='Post_transition_voltage_fit'), row=1, col=1)
-                
-                
-                
-                # Input current plot
-                fig.add_trace(go.Scatter(x=TVC_table['Time_s'], y=TVC_table['Input_current_pA'], mode='lines', name='Input_current_trace', line=dict(color='black', width =1 )), row=2, col=1)
-                
-                fig.add_trace(go.Scatter(
-                    x=np.array(current_trace_table.loc[(current_trace_table["Time_s"]<=(min_time_current+0.005))&(current_trace_table["Time_s"]>=(min_time_current)),"Time_s"]), 
-                    y=[pre_T_current]*len(np.array(current_trace_table.loc[(current_trace_table["Time_s"]<=(min_time_current+0.005))&(current_trace_table["Time_s"]>=(min_time_current)),"Time_s"])), 
-                    mode='lines', name="Pre transition fit Median", line=dict(color="red")), row=2, col=1)
-                fig.add_trace(go.Scatter(
-                    x=np.array(current_trace_table.loc[(current_trace_table["Time_s"]<=(max_time_current))&(current_trace_table["Time_s"]>=(max_time_current-0.005)),"Time_s"]), 
-                    y=[post_T_current]*len(np.array(current_trace_table.loc[(current_trace_table["Time_s"]<=(max_time_current))&(current_trace_table["Time_s"]>=(max_time_current-0.005)),"Time_s"])), 
-                    mode='lines', name="Post transition fit Median", line=dict(color='blue')), row=2, col=1)
-                fig.add_trace(go.Scatter(x=[actual_transition_time], y=[pre_T_current], mode='markers', name='pre_Transition_current', marker=dict(color='red', size = 8)), row=2, col=1)
-                fig.add_trace(go.Scatter(x=[actual_transition_time], y=[post_T_current], mode='markers', name='post_Transition_current', marker=dict(color='blue', size=8)), row=2, col=1)
-                
-                # V_dot_one_kHz
-                first_sign_change = delta_t_ref_first_positive+T_ref_cell
-                min_V_dot = np.nanmin(TVC_table['V_dot_one_kHz'])
-                max_V_dot = np.nanmax(TVC_table['V_dot_one_kHz'])
-
-                fig.add_trace(go.Scatter(x=TVC_table['Time_s'], y=TVC_table['V_dot_one_kHz'], mode='lines', name='V_dot_one_kHz', line=dict(color='black', width = 1)), row=3, col=1)
-                fig.add_trace(go.Scatter(x=[first_sign_change]*len(np.arange(min_V_dot,max_V_dot,1)), y=np.arange(min_V_dot,max_V_dot,1),
-                                         mode='lines', name=f'first_sign_change = {round(first_sign_change,4)}s <br> delta_t_ref_first_positive = {round(delta_t_ref_first_positive,4)}s ', line=dict(color='blueviolet', dash='dash')), row=3, col=1)
-                # Add dashed vertical line at time = T_star
-                fig.add_trace(go.Scatter(x=[T_ref_cell]*len(np.arange(min_V_dot,max_V_dot,1)), y=np.arange(min_V_dot,max_V_dot,1),
-                                         mode='lines', name=f'T_ref_cell = {round(T_ref_cell,4)}s', line=dict(color='red', dash='dash')), row=3, col=1)
-                T_start_fit = np.nanmin(V_table_to_fit['Time_s'])
-                fig.add_trace(go.Scatter(x=[T_start_fit]*len(np.arange(min_V_dot,max_V_dot,1)), y=np.arange(min_V_dot,max_V_dot,1),
-                                         mode='lines', name=f'T_start_fit = {round(T_start_fit,4)}s', line=dict(color='#c96a04', dash='dash')), row=3, col=1)
-                
-                
-                # V_double_dot_5KHz plot
-                fig.add_trace(go.Scatter(x=TVC_table['Time_s'], y=TVC_table['V_double_dot_five_kHz'], mode='lines', name='V_double_dot_five_kHz', line=dict(color='black', width = 1)), row=4, col=1)
-                # Add dashed vertical line at time = T_star
-                Fast_ring_time = np.array(TVC_table.loc[(TVC_table["Time_s"]<=(actual_transition_time+.005))&(TVC_table["Time_s"]>=actual_transition_time),'Time_s'])
-                max_V_double_dot_five_kHz = np.nanmax(TVC_table['V_double_dot_five_kHz'])
-                min_V_double_dot_five_kHz = np.nanmin(TVC_table['V_double_dot_five_kHz'])
-                fig.add_trace(go.Scatter(x=Fast_ring_time, y=[alpha_FT]*len(Fast_ring_time),
-                                         mode='lines', name=f'alpha_FT = {round(alpha_FT,4)} mV/s/s', line=dict(color='darkred', dash='dash')), row=4, col=1)
-                fig.add_trace(go.Scatter(x=Fast_ring_time, y=[-alpha_FT]*len(Fast_ring_time),
-                                         mode='lines', name=f'-alpha_FT = {round(-alpha_FT,4)} mV/s/s', line=dict(color='darkred', dash='dash')), row=4, col=1)
-                if not np.isnan(T_FT):
-                    fig.add_trace(go.Scatter(x=[T_FT]*len(np.arange(min_V_double_dot_five_kHz, max_V_double_dot_five_kHz, 1.)), y=np.arange(min_V_double_dot_five_kHz, max_V_double_dot_five_kHz, 1.),
-                                             mode='lines', name=f'T_FT = {round(T_FT,4)}s', line=dict(color='darkred', dash='dash')), row=4, col=1)
-
-                # I_dot_5_kHz plot
-                fig.add_trace(go.Scatter(x=TVC_table['Time_s'], y=TVC_table['I_dot_five_kHz'], mode='lines', name='I_dot_5_kHz', line=dict(color='black', width = 1)), row=5, col=1)
-                
-                # Add dashed vertical line at time = T_star
-                fig.add_trace(go.Scatter(x=[actual_transition_time, actual_transition_time], y=[TVC_table['I_dot_five_kHz'].min(), TVC_table['I_dot_five_kHz'].max()],
-                                         mode='lines', name=f'T_star = {round(actual_transition_time,4)}s', line=dict(color='red', dash='dash')), row=5, col=1)
-                
-
-                # Update layout
-                fig.update_layout(
-
-                    height=1200,
-                    showlegend=True,
-                    
-                )
-                
-                # Update x and y axes
-
-                fig.update_yaxes(title_text="mV", row=1, col=1)
-                fig.update_xaxes(title_text="Time s", row=5, col=1)
-                fig.update_yaxes(title_text="pA", row=2, col=1)
-                fig.update_yaxes(title_text="mV/ms", row=3, col=1)
-                fig.update_yaxes(title_text="mV/ms/ms", row=4, col=1)
-                fig.update_yaxes(title_text="pA/ms", row=5, col=1)
-
-                return fig
-            
-    @output
-    @render.table
-    @reactive.event(input.Update_cell_btn, input.Sweep_selected)
-    def BE_conditions_table():
-        if input.Cell_file_select() :
-            cell_dict=get_cell_tables()
-            condition_table = get_BE_value_and_table(cell_dict, input.Sweep_selected())[1]
-            condition_table_styled = condition_table.style.set_table_attributes('class="dataframe shiny-table table w-auto"').apply(highlight_late)
-            return condition_table_styled
-        
-    @output
-    @render.text
-    @reactive.event(input.Update_cell_btn, input.Sweep_selected)
-    def BE_value():
-        if input.Cell_file_select() :
-            cell_dict=get_cell_tables()
-            BE_val = get_BE_value_and_table(cell_dict, input.Sweep_selected())[0]
-            
-            return f"Estimated Bridge error = {round(BE_val, 5)} GOhms"
-            
-                
-    
-    @output
-    @render_widget
-    @reactive.event(input.Update_cell_btn, input.Adaptation_feature_to_display)
     def Adaptation_plotly():
-        if input.Cell_file_select() :
-            cell_dict=get_cell_tables()
-            Adaptation_table = cell_dict['Cell_Adaptation']
-            Full_SF_table = cell_dict['Full_SF_table']
-            sweep_info_table = cell_dict['Sweep_info_table']
-            Sweep_QC_table = cell_dict['Sweep_QC_table']
-            
-            current_adaptation_measure = Adaptation_table.loc[Adaptation_table['Feature'] == input.Adaptation_feature_to_display(), "Measure" ].values[0]
-
-            
-            interval_based_feature = fir_an.collect_interval_based_features_test(Full_SF_table, sweep_info_table, Sweep_QC_table, 0.5, input.Adaptation_feature_to_display(), current_adaptation_measure)
-            
-            plot_dict = fir_an.fit_adaptation_test(interval_based_feature, do_plot=True)
-            
-            ####
-            original_sim_table = plot_dict["original_sim_table"]
-            sim_table = plot_dict["sim_table"]
-            Na = plot_dict["Na"]
-            C_ref = plot_dict['C_ref']
-            interval_frequency_table = plot_dict['interval_frequency_table']
-            median_table = plot_dict['median_table']
-            M = plot_dict['M']
-            C = plot_dict['C']
-            
-            fig = go.Figure()
-
-            # Line plot
-            fig.add_trace(go.Scatter(x=original_sim_table['Spike_Interval'], y=original_sim_table['Normalized_feature'], mode='lines', name='Original Sim Table'))
-            
-            # Area plot
-            fig.add_trace(go.Scatter(x=original_sim_table['Spike_Interval'], y=original_sim_table['Normalized_feature'], fill='tozeroy', fillcolor='#e5c8d6', line=dict(color='rgba(0,0,0,0)')))
-            
-            # Rect plot (as shape)
-            fig.add_shape(type='rect', x0=np.nanmin(sim_table['Spike_Interval']), x1=(Na-1)-1, y0=0, y1=C_ref, fillcolor='gray', opacity=0.7, line=dict(width=0))
-            
-            # Line plot for sim_table
-            fig.add_trace(go.Scatter(x=sim_table['Spike_Interval'], y=sim_table['Normalized_feature'], mode='lines', name='Sim Table'))
-            
-            # Points for interval_frequency_table with hovertext
-            hover_text = [
-                f'Sweep: {s}<br>Stim_amp_pA: {p}' 
-                for s, p in zip(interval_frequency_table['Sweep'], interval_frequency_table['Stimulus_amp_pA'])
-            ]
-            
-            fig.add_trace(go.Scatter(
-                x=interval_frequency_table['Spike_Interval'], 
-                y=interval_frequency_table['Normalized_feature'], 
-                mode='markers', 
-                marker=dict(color=interval_frequency_table['Stimulus_amp_pA'], colorscale='Viridis'),
-                name='Interval Frequency Table',
-                hovertext=hover_text,
-                hoverinfo='text'
-            ))
-                # Normalize sizes
-            max_size = 25
-            sizes = (median_table['Count_weigths'] / median_table['Count_weigths'].max()) * max_size
-            
-           # Points for median_table with normalized sizes and hovertext for Count_weigths
-            hover_text_median = [
-                f'Count_weight: {w}' 
-                for w in median_table['Count_weigths']
-            ]
-            
-            fig.add_trace(go.Scatter(
-                x=median_table['Spike_Interval'], 
-                y=median_table['Normalized_feature'], 
-                mode='markers', 
-                marker=dict(size=sizes, color='red', symbol='square'), 
-                name='Median Table',
-                hovertext=hover_text_median,
-                hoverinfo='text'
-            ))
-            
-                # Invisible traces for legend
-            fig.add_trace(go.Scatter(
-                x=[None], y=[None],
-                mode='markers',
-                marker=dict(color='#e5c8d6'),
-                name=f'M: {M}'
-            ))
-            
-            fig.add_trace(go.Scatter(
-                x=[None], y=[None],
-                mode='markers',
-                marker=dict(color='gray'),
-                name=f'C: {C}'
-            ))
-
-            
-            fig.update_layout(xaxis_title='Spike Interval', yaxis_title='Normalized Feature', title=f"Adaptation of {input.Adaptation_feature_to_display()} ({current_adaptation_measure})")
-            
-            return fig
+        fig = Adaptation_figure_plotly_react_var.get()
+        return fig if fig is not None else go.Figure()  # or show an empty figure
+    
+    
+    @reactive.Effect
+    @reactive.event(input.trigger_adaptation_plot_saving)
+    def Adaptation_plot_save_triggered():
+        d = saving_dict.get().copy()
+        d["Adaptation_plot"] = {
+                            "trigger": 1,
+                            "object": Adaptation_figure_plot_react_var.get(),
+                            "format": "plot"
+                        }
+        saving_dict.set(d)
     
     @output
-    @render.table
+    @render.data_frame
     def Adaptation_table():
-        if input.Sweep_selected() :
-            cell_dict=get_cell_tables()
-            Adaptation_table = cell_dict['Cell_Adaptation']
+        Adaptation_table = Adaptation_table_react_var.get()
+        return Adaptation_table
+    
+    @reactive.Effect
+    @reactive.event(input.trigger_adaptation_table_saving)
+    def Adaptation_table_save_triggered():
+        d = saving_dict.get().copy()
+        d["Adaptation_table"] = {
+                            "trigger": 1,
+                            "object": Adaptation_table_react_var.get(),
+                            "format": "csv"
+                        }
+        saving_dict.set(d)
+    
+    # @output
+    # @render_widget
+    # @reactive.event(input.Update_cell_btn, input.Adaptation_feature_to_display)
+    # def Adaptation_plotly_old():
+    #     if input.Cell_file_select() :#and cell_file_correctly_opened() :
+    #         cell_dict=get_cell_tables()
+    #         Adaptation_table = cell_dict['Cell_Adaptation']
+    #         Full_SF_table = cell_dict['Full_SF_table']
+    #         sweep_info_table = cell_dict['Sweep_info_table']
+    #         Sweep_QC_table = cell_dict['Sweep_QC_table']
+            
+    #         current_adaptation_measure = Adaptation_table.loc[Adaptation_table['Feature'] == input.Adaptation_feature_to_display(), "Measure" ].values[0]
+
+            
+    #         interval_based_feature = fir_an.collect_interval_based_features_test(Full_SF_table, sweep_info_table, Sweep_QC_table, 0.5, input.Adaptation_feature_to_display(), current_adaptation_measure)
+            
+    #         plot_dict = fir_an.fit_adaptation_test(interval_based_feature, do_plot=True)
+            
+    #         ####
+    #         original_sim_table = plot_dict["original_sim_table"]
+    #         sim_table = plot_dict["sim_table"]
+    #         Na = plot_dict["Na"]
+    #         C_ref = plot_dict['C_ref']
+    #         interval_frequency_table = plot_dict['interval_frequency_table']
+    #         median_table = plot_dict['median_table']
+    #         M = plot_dict['M']
+    #         C = plot_dict['C']
+            
+    #         fig = go.Figure()
+
+    #         # Line plot
+    #         fig.add_trace(go.Scatter(x=original_sim_table['Spike_Interval'], y=original_sim_table['Normalized_feature'], mode='lines', name='Original Sim Table'))
+            
+    #         # Area plot
+    #         fig.add_trace(go.Scatter(x=original_sim_table['Spike_Interval'], y=original_sim_table['Normalized_feature'], fill='tozeroy', fillcolor='#e5c8d6', line=dict(color='rgba(0,0,0,0)')))
+            
+    #         # Rect plot (as shape)
+    #         fig.add_shape(type='rect', x0=np.nanmin(sim_table['Spike_Interval']), x1=(Na-1)-1, y0=0, y1=C_ref, fillcolor='gray', opacity=0.7, line=dict(width=0))
+            
+    #         # Line plot for sim_table
+    #         fig.add_trace(go.Scatter(x=sim_table['Spike_Interval'], y=sim_table['Normalized_feature'], mode='lines', name='Sim Table'))
+            
+    #         # Points for interval_frequency_table with hovertext
+    #         hover_text = [
+    #             f'Sweep: {s}<br>Stim_amp_pA: {p}' 
+    #             for s, p in zip(interval_frequency_table['Sweep'], interval_frequency_table['Stimulus_amp_pA'])
+    #         ]
+            
+    #         fig.add_trace(go.Scatter(
+    #             x=interval_frequency_table['Spike_Interval'], 
+    #             y=interval_frequency_table['Normalized_feature'], 
+    #             mode='markers', 
+    #             marker=dict(color=interval_frequency_table['Stimulus_amp_pA'], colorscale='Viridis'),
+    #             name='Interval Frequency Table',
+    #             hovertext=hover_text,
+    #             hoverinfo='text'
+    #         ))
+    #             # Normalize sizes
+    #         max_size = 25
+    #         sizes = (median_table['Count_weigths'] / median_table['Count_weigths'].max()) * max_size
+            
+    #        # Points for median_table with normalized sizes and hovertext for Count_weigths
+    #         hover_text_median = [
+    #             f'Count_weight: {w}' 
+    #             for w in median_table['Count_weigths']
+    #         ]
+            
+    #         fig.add_trace(go.Scatter(
+    #             x=median_table['Spike_Interval'], 
+    #             y=median_table['Normalized_feature'], 
+    #             mode='markers', 
+    #             marker=dict(size=sizes, color='red', symbol='square'), 
+    #             name='Median Table',
+    #             hovertext=hover_text_median,
+    #             hoverinfo='text'
+    #         ))
+            
+    #             # Invisible traces for legend
+    #         fig.add_trace(go.Scatter(
+    #             x=[None], y=[None],
+    #             mode='markers',
+    #             marker=dict(color='#e5c8d6'),
+    #             name=f'M: {M}'
+    #         ))
+            
+    #         fig.add_trace(go.Scatter(
+    #             x=[None], y=[None],
+    #             mode='markers',
+    #             marker=dict(color='gray'),
+    #             name=f'C: {C}'
+    #         ))
+
+            
+    #         fig.update_layout(xaxis_title='Spike Interval', yaxis_title='Normalized Feature', title=f"Adaptation of {input.Adaptation_feature_to_display()} ({current_adaptation_measure})")
+            
+    #         return fig
+    
+    # @output
+    # @render.data_frame
+    # def Adaptation_table_old():
+    #     if input.Sweep_selected() :
+    #         cell_dict=get_cell_tables()
+    #         Adaptation_table = cell_dict['Cell_Adaptation']
             
             
-            return Adaptation_table
+    #         return Adaptation_table
+    
+#%% In progress
         
     @reactive.Calc
     @reactive.event(input.Update_cell_btn, input.x_Spike_feature, input.y_Spike_feature, input.y_Spike_feature_index)
     def get_spike_feature_index():
-        if input.Cell_file_select() :
+        if input.Cell_file_select() :#and cell_file_correctly_opened() :
             
             cell_dict=get_cell_tables()
             Full_SF_table = cell_dict['Full_SF_table']
@@ -3846,7 +4594,7 @@ def server(input: Inputs, output: Outputs, session: Session):
     @reactive.event(input.Update_cell_btn, input.x_Spike_feature, input.y_Spike_feature, input.y_Spike_feature_index)
     def Spike_features_index_correlation():
         
-        if input.Cell_file_select() :
+        if input.Cell_file_select() :#and cell_file_correctly_opened():
             
             Spike_feature_x = input.x_Spike_feature()
             
